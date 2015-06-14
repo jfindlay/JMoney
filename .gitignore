@@ -1,0 +1,4 @@
+agent
+token
+*.py?
+.*.sw?
