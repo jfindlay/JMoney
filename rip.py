@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 import os
@@ -220,7 +220,11 @@ class CDParanoia(object):
 
         self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
         if os.path.exists(self.dest_dir):
-            if not self.opts['force']:
+            if self.opts['force']:
+                for track in os.listdir(self.dest_dir):
+                    os.remove(track)
+                os.rmdir(self.dest_dir)
+            else:
                 print('Destination directory, "{0}", exists'.format(self.dest_dir))
                 sys.exit(exit_codes['disc_dir'])
         else:
@@ -322,7 +326,8 @@ def get_opts():
 
 def main():
     '''
-    rip CDDA discs and flac encode and tag the tracks with info from a CDDA database
+    rip CDDA discs and flac encode and tag the tracks with info from a CDDA
+    database
     '''
     opts = get_opts()
 
