@@ -3,6 +3,7 @@
 
 import os
 import sys
+import six
 import yaml
 from pprint import pprint
 from time import sleep
@@ -17,157 +18,252 @@ except ImportError:
     HAS_DISCOGS=False
 
 
-def setup(opts):
+exit_codes = {'disc_drive': 11,
+              'freedb_query': 21,
+              'disc_dir': 31,
+              'rip_disc': 41}
+
+
+def encode_dict(d, encoding='UTF-8'):
     '''
-    load disc drive
+    encode top level key and value strings in `d` in `encoding`
     '''
-    if call(['eject', '-t']) != 0:
-        print('\nFailed to close disc drive')
-        sys.exit(1)
-
-
-def freedb(opts):
-    '''
-    query freedb
-    '''
-    client_name, client_version = opts['agent'].split('/')
-
-    # get disc info
-    disc_id = DiscID.disc_id(DiscID.open(opts['device']))
-    status, results = CDDB.query(disc_id,
-                                 server_url=opts['freedb_mirror'],
-                                 client_name=client_name,
-                                 client_version=client_version)
-    db_record = [{'disc_id': disc_id}]
-
-    if not str(status).startswith('2'):
-        print('Failed to query freedb mirror {0} for disc info: HTTP code {1}'.format(opts['freedb_mirror'], status))
-        sys.exit(2)
-
-    if isinstance(results, dict):  # only one result found
-        results = [results]
-
-    # get track info
-    for num, result in enumerate(results):
-        print('\n===== Result {0:>02} =====\n'.format(num + 1))
-        pprint(result) ; print('')
-        sleep(1)  # throttle query rate
-        status, track_info = CDDB.read(result['category'],
-                                       result['disc_id'],
-                                       server_url=opts['freedb_mirror'],
-                                       client_name=client_name,
-                                       client_version=client_version)
-        db_record.append({'disc_info': result, 'track_info': track_info})
-        if not str(status).startswith('2'):
-            print('Failed to query freedb mirror {0} for track info: HTTP code {1}'.format(opts['freedb_mirror'], status))
-            sys.exit(2)
-
-        for track in range(disc_id[1]):
-            print('Track {0:>02d}: {1}'.format(track + 1, track_info['TTITLE{0}'.format(track)]))
-    print('\n=====================\n')
-
-    # get preferred info set
-    if len(results) > 1:
-        valid_selection = False
-        while valid_selection == False:
+    codings = ['iso-8859-1']  # list of codings to try
+    transcoded_d = {}
+    for k,v in d.items():
+        for coding in codings:
             try:
-                select_range = '[1-{0}]'.format(len(results))
-                selected_result_num = int(input('Select a preferred result {0}: '.format(select_range)))
-            except Exception:
-                selected_result_num = None
-            if selected_result_num in range(1, len(results) + 1):
-                valid_selection = True
-                selected_result = results[selected_result_num - 1]
-                db_record[selected_result_num]['preferred'] = True
-            else:
-                print('Invalid selection')
-    elif len(results) == 1:
-        selected_result = results[0]
-        db_record[1]['preferred'] = True
-    else:
-        print('\nNo freedb results found for disc')
-
-    if len(results):
-        print('\nSelected result: {0}\n'.format(selected_result['title']))
-
-    return db_record
+                if isinstance(k, six.string_types):
+                    k = k.decode(coding).encode(encoding)
+                if isinstance(v, six.string_types):
+                    v = v.decode(coding).encode(encoding)
+            except UnicodeDecodeError:
+                pass
+            transcoded_d[k] = v
+    return transcoded_d
 
 
-def discogs(opts):
+class CDDrive(object):
     '''
-    query discogs
+    interaction with CD drive
     '''
-    if not HAS_DISCOGS:
-        print('discogs client library is unavailable')
-        return
+    def __init__(self, opts):
+        '''
+        setup options
+        '''
+        self.opts = opts
 
-    d = discogs_client.Client(opts['agent'], user_token=opts['token'])
-    results = d.search('Stockholm By Night', type='release')
-    artist = results[0].artists[0]
-    releases = d.search('Bit Shifter', type='artist')[0].releases[1].versions[0].labels[0].releases
-    for release in releases:
-        print(release)
+    def close(self):
+        '''
+        close disc drive drawer
+        '''
+        if call(['eject', '-t']) != 0:
+            print('\nFailed to close disc drive drawer')
+            sys.exit(exit_codes['disc_drive'])
+
+    def open(self):
+        '''
+        open disc drive drawer
+        '''
+        if call(['eject']) != 0:
+            print('\nFailed to open disc drive')
+            sys.exit(exit_codes['disc_drive'])
 
 
-def rip(opts, db_record):
+class FreeDB(object):
     '''
-    use cdparanoia to rip disc and rename ripped track files
+    interaction with freedb
     '''
-    # setup directory
-    disc_dir = ''
-    preferred = 0
-    for number, entry in enumerate(db_record):
-        if 'preferred' in entry:
-            preferred = number
-            disc_dir = entry['disc_info']['title'].replace('/', '::')
-    if not disc_dir:
-        disc_dir = db_record[0]['disc_id'][0]
+    def __init__(self, opts):
+        '''
+        setup parameters, options
+        '''
+        self.opts = opts
+        self.client_name, self.client_version = opts['agent'].split('/')
+        self.disc_id = DiscID.disc_id(DiscID.open(opts['device']))
+        self.db_record = [{'disc_id': self.disc_id}]
 
-    dest_dir = os.path.join(opts['library_dir'], disc_dir)
-    if os.path.exists(dest_dir):
-        print('Destination directory exists')
-        sys.exit(3)
-    else:
-        os.makedirs(dest_dir)
+        self.get_disc_info()
+        self.get_track_info()
+        self.get_preferred()
 
-    # rip tracks
-    cmd = ['cdparanoia', '--log-debug=/dev/null',
-                         '--log-summary=/dev/null',
-                         '--output-wav',
-                         '--batch',
-                         '--force-read-speed={0}'.format(opts['read_speed']),
-                         '--never-skip']
-    if call(cmd, cwd=dest_dir) != 0:
-        print('\nFailed to rip disc')
-        sys.exit(4)
+    def get_disc_info(self):
+        '''
+        retrieve disc info
+        '''
+        status, results = CDDB.query(self.disc_id,
+                                     server_url=self.opts['freedb_mirror'],
+                                     client_name=self.client_name,
+                                     client_version=self.client_version)
 
-    # rename ripped tracks
-    os.rename(os.path.join(dest_dir, 'track00.cdda.wav'), os.path.join(dest_dir, '00 - CDDA TOC.wav'))
-    if preferred:
-        for track_number in range(db_record[0]['disc_id'][1]):
-            old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
-            track_name = db_record[preferred]['track_info']['TTITLE{0}'.format(track_number)]
-            new_name = '{0:02} - '.format(track_number + 1) + track_name + '.wav'
-            os.rename(os.path.join(dest_dir, old_name), os.path.join(dest_dir, new_name))
+        if not str(status).startswith('2'):
+            print('Failed to query freedb mirror "{0}" for disc info on disc_id "{1}": '
+                  'HTTP code {2}'.format(self.opts['freedb_mirror'], self.disc_id[0], status))
+            sys.exit(exit_codes['freedb_query'])
 
-    # save database record for disc
-    with open(os.path.join(dest_dir, '00 - disc info.yaml'), 'wb') as disc_record:
-        disc_record.write(yaml.dump(db_record))
+        # a single result will not be enclosed in a list by the CDDB lib
+        results = [results] if isinstance(results, dict) else results
 
-    return dest_dir
+        self.results = [encode_dict(result) for result in results]
+
+    def get_track_info(self):
+        '''
+        retrieve track info for each result
+        '''
+        for num, result in enumerate(self.results):
+            print('\n===== Result {0:>02} =====\n'.format(num + 1))
+            pprint(result) ; print('')
+            sleep(1)  # throttle query rate
+            status, track_info = CDDB.read(result['category'],
+                                           result['disc_id'],
+                                           server_url=self.opts['freedb_mirror'],
+                                           client_name=self.client_name,
+                                           client_version=self.client_version)
+
+            if not str(status).startswith('2'):
+                print('Failed to query freedb mirror {0} for track info: '
+                      'HTTP code {1}'.format(self.opts['freedb_mirror'], status))
+                sys.exit(exit_codes['freedb_query'])
+
+            track_info = encode_dict(track_info)
+            self.db_record.append({'disc_info': result, 'track_info': track_info})
+
+            for track in range(self.disc_id[1]):
+                print('Track {0:>02d}: {1}'.format(track + 1, track_info['TTITLE{0}'.format(track)]))
+        print('\n=====================\n')
+
+    def get_preferred(self):
+        '''
+        get preferred info set
+        '''
+        if len(self.results) > 1:
+            valid_selection = False
+            while valid_selection == False:
+                try:
+                    select_range = '[1-{0}]'.format(len(self.results))
+                    selected_result_num = int(input('Select a preferred result {0}: '.format(select_range)))
+                except Exception:
+                    selected_result_num = None
+                if selected_result_num in range(1, len(self.results) + 1):
+                    valid_selection = True
+                    selected_result = self.results[selected_result_num - 1]
+                    self.db_record[selected_result_num]['preferred'] = True
+                else:
+                    print('Invalid selection')
+        elif len(self.results) == 1:
+            selected_result = self.results[0]
+            self.db_record[1]['preferred'] = True
+        else:
+            print('\nNo freedb results found for disc')
+
+        if len(self.results):
+            print('\nSelected result: {0}\n'.format(selected_result['title']))
 
 
-def finish(opts, db_record, dest_dir):
+class discogs(object):
     '''
-    unload disc drive and warn if no CDDA database results were found
+    interaction with discogs
     '''
-    if len(db_record) == 1:
-        print('\nNo CDDA database records were found for {0}; '
-              'you must rename the disc directory, {1}, and tracks manually'
-              ''.format(db_record[0]['disc_id'][0], dest_dir))
-    if call(['eject']) != 0:
-        print('\nFailed to open disc drive')
-        sys.exit(1)
+    def __init__(self, opts):
+        '''
+        setup options
+        '''
+        if not HAS_DISCOGS:
+            print('discogs client library is unavailable')
+        else:
+            self.opts = opts
+            self.d = discogs_client.Client(self.opts['agent'],
+                                           user_token=self.opts['token'])
+
+    def query(self, search):
+        '''
+        query discogs database
+        '''
+        if not HAS_DISCOGS:
+            print('discogs client library is unavailable')
+        else:
+            results = self.d.search('Stockholm By Night', type='release')
+            artist = results[0].artists[0]
+            releases = d.search('Bit Shifter', type='artist')[0].releases[1].versions[0].labels[0].releases
+            for release in releases:
+                print(release)
+
+
+class CDParanoia(object):
+    '''
+    interaction with cdparanoia
+    '''
+    def __init__(self, opts, db_record):
+        '''
+        setup options and disc information
+        '''
+        self.opts = opts
+        self.db_record = db_record
+
+        self.setup_dir()
+        self.rip_tracks()
+        self.rename_tracks()
+        self.save_db_record()
+
+    def setup_dir(self):
+        '''
+        setup disc directory
+        '''
+        disc_dir = ''
+        self.preferred = 0
+        for number, entry in enumerate(self.db_record):
+            if 'preferred' in entry:
+                self.preferred = number
+                disc_dir = entry['disc_info']['title'].replace('/', '::')
+        if not disc_dir:
+            disc_dir = self.db_record[0]['disc_id'][0]
+
+        self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
+        if os.path.exists(self.dest_dir):
+            if not self.opts['force']:
+                print('Destination directory, "{0}", exists'.format(self.dest_dir))
+                sys.exit(exit_codes['disc_dir'])
+        else:
+            os.makedirs(self.dest_dir)
+
+    def rip_tracks(self):
+        '''
+        rip all tracks from the disc
+        '''
+        cmd = ['cdparanoia', '--log-debug=/dev/null',
+                             '--log-summary=/dev/null',
+                             '--output-wav',
+                             '--batch',
+                             '--force-read-speed={0}'.format(self.opts['read_speed']),
+                             '--never-skip']
+        if call(cmd, cwd=self.dest_dir) != 0:
+            print('\nFailed to rip disc')
+            sys.exit(exit_codes['rip_disc'])
+
+    def rename_tracks(self):
+        '''
+        rename ripped tracks
+        '''
+        os.rename(os.path.join(self.dest_dir, 'track00.cdda.wav'),
+                  os.path.join(self.dest_dir, '00 - disc TOC.wav'))
+        if self.preferred:
+            for track_number in range(self.db_record[0]['disc_id'][1]):
+                old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
+                track_name = self.db_record[self.preferred]['track_info']['TTITLE{0}'.format(track_number)]
+                new_name = '{0:02} - {1}.wav'.format(track_number + 1, track_name)
+                os.rename(os.path.join(self.dest_dir, old_name), os.path.join(self.dest_dir, new_name))
+
+    def save_db_record(self):
+        '''
+        save database record in disc directory
+        '''
+        if len(self.db_record) == 1:
+            print('\nNo CDDA database records were found for {0}; '
+                  'you will need to name the disc directory, {1}, and tracks manually'
+                  ''.format(self.db_record[0]['disc_id'][0], self.dest_dir))
+
+        with open(os.path.join(self.dest_dir, '00 - disc info.yaml'), 'wb') as disc_record:
+            disc_record.write(yaml.dump(self.db_record))
 
 
 def get_opts():
@@ -210,6 +306,9 @@ def get_opts():
                                 type=str,
                                 default=8,
                                 help='disc drive read speed')
+        arg_parser.add_argument('-f', '--force',
+                                action='store_true',
+                                help='overwrite existing disc directory if it exists')
 
         return vars(arg_parser.parse_args())
 
@@ -227,12 +326,13 @@ def main():
     '''
     opts = get_opts()
 
-    setup(opts)
+    cd_drive = CDDrive(opts)
+    cd_drive.close()
 
-    db_record = freedb(opts)
-    dest_dir = rip(opts, db_record)
+    freedb = FreeDB(opts)
+    cdparanoia = CDParanoia(opts, freedb.db_record)
 
-    finish(opts, db_record, dest_dir)
+    cd_drive.open()
 
 
 if __name__ == '__main__':
