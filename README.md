@@ -9,7 +9,9 @@ ID, then the disc ID is used for the disc directory name and cdparanoia default
 names are used for the track names.  All records retrieved from freedb are
 stored as yaml in a file in the disc directory.
 
-A separate script yet to be written will convert each track to flac format.
+JMoney can also encode ripped tracks into flac format.  This can be done as a
+second step in the ripping process, for a single disc directory or for the
+entire library.
 
 ## Examples
 ```console
@@ -20,7 +22,7 @@ $ time ./jmoney --verify-encoding encode
 ```
 ```console
 # rip and encode a single disc
-$ ./jmoney rip encode
+$ time ./jmoney rip encode
 # encode all wav files in the library
-$ ./jmoney encode
+$ time ./jmoney encode
 ```
