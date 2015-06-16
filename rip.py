@@ -278,26 +278,39 @@ class FLAC(object):
     '''
     flac interaction
     '''
-    def __init__(self, opts, disc_dir):
+    def __init__(self, opts, disc_dir=None):
         '''
         setup opts
         '''
         self.opts = opts
-        self.disc_dir = disc_dir
+        if disc_dir:
+            self.rip_dir = disc_dir
 
     def encode(self):
         '''
         encode all `*.wav` files in the disc directory
         '''
+        def encode_disc(cmd, disc_dir):
+            '''
+            encode all the tracks from a disc
+            '''
+            for track_name in os.listdir(disc_dir):
+                if track_name.endswith('.wav'):
+                    call(cmd, cwd=disc_dir)
+
         cmd = ['flac', '--keep-foreign-metadata']
         if self.opts['verify_encoding']:
             cmd.append('--verify')
         if not self.opts['keep_wav']:
             cmd.append('--delete-input-file')
 
-        for track_name in os.listdir(self.disc_dir):
-            if track_name.endswith('.wav'):
-                call(cmd, cwd=self.disc_dir)
+        if hasattr(self, 'rip_dir'):
+            encode_disc(cmd, self.rip_dir)
+        elif self.opts['disc_dir']:
+            encode_disc(cmd, self.disc_dir)
+        else:
+            for disc_dir in self.opts['library_dir']:
+                encode_disc(cmd, disc_dir)
 
 
 def get_opts():
@@ -316,6 +329,13 @@ def get_opts():
         '''
         desc = 'rip CDDA discs and flac encode and tag the tracks with info from a CDDA database'
         parser = ArgumentParser(description=desc, formatter_class=ArgumentDefaultsHelpFormatter)
+        parser.add_argument('action',
+                            nargs='*',
+                            help='`rip`: rip CDDA tracks, `encode`: encode tracks in flac format; '
+                                 'if both arguments are given, the disc is ripped '
+                                 'and the tracks are encoded sequentially as a single operation, '
+                                 'otherwise if only `rip` is given, only ripping occurs, or '
+                                 'if only `encode` is specified, all unencoded tracks in the library dir are encoded')
         parser.add_argument('-d', '--device',
                             type=str,
                             default='/dev/sr0',
@@ -349,9 +369,9 @@ def get_opts():
         parser.add_argument('-k', '--keep-wav',
                             action='store_true',
                             help='do not delete wave files after successful flac encoding')
-        parser.add_argument('action',
-                            nargs='*',
-                            help='rip: rip CDDA tracks, encode: encode tracks in flac format')
+        parser.add_argument('-e', '--encode-dir',
+                            type=str,
+                            help='encode the tracks in a specific disc dir')
 
         return vars(parser.parse_args())
 
@@ -359,6 +379,7 @@ def get_opts():
 
     opts['agent'] = opts['agent_file'].read().strip() ; del opts['agent_file']
     opts['token'] = opts['token_file'].read().strip() ; del opts['token_file']
+    opts['action'] = set(opts['action'])
 
     return opts
 
@@ -370,15 +391,20 @@ def main():
     '''
     opts = get_opts()
 
-    cd_drive = CDDrive(opts)
-    cd_drive.close()
+    if 'rip' in opts['action']:
+        cd_drive = CDDrive(opts)
+        cd_drive.close()
 
-    freedb = FreeDB(opts)
-    cdparanoia = CDParanoia(opts, freedb.db_record)
+        freedb = FreeDB(opts)
+        cdparanoia = CDParanoia(opts, freedb.db_record)
 
-    flac = FLAC(opts, cdparanoia.dest_dir)
+    if {'rip', 'encode'} == opts['action']:
+        flac = FLAC(opts, cdparanoia.dest_dir)
+    elif 'encode' in opts['action']:
+        flac = FLAC(opts)
 
-    cd_drive.open()
+    if 'rip' in opts['action']:
+        cd_drive.open()
 
 
 if __name__ == '__main__':
