@@ -10,3 +10,10 @@ names are used for the track names.  All records retrieved from freedb are
 stored as yaml in a file in the disc directory.
 
 A separate script yet to be written will convert each track to flac format.
+
+## Example
+```console
+# insert a disc into the drive
+$ rip.py --help | less
+$ time rip.py --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8
+```
