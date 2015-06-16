@@ -14,13 +14,13 @@ A separate script yet to be written will convert each track to flac format.
 ## Examples
 ```console
 # insert a disc into the drive
-$ ./rip.py --help | less
-$ time ./rip.py --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8 rip
-$ time ./rip.py --verify-encoding encode
+$ ./jmoney --help | less
+$ time ./jmoney --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8 rip
+$ time ./jmoney --verify-encoding encode
 ```
 ```console
 # rip and encode a single disc
-$ ./rip.py rip encode
+$ ./jmoney rip encode
 # encode all wav files in the library
-$ ./rip.py encode
+$ ./jmoney encode
 ```
