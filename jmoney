@@ -301,7 +301,7 @@ class FLAC(object):
                     call(cmd + [track_name], cwd=disc_dir)
 
         cmd = ['flac', '--keep-foreign-metadata']
-        if self.opts['verify_encoding']:
+        if not self.opts['no_verify_encoding']:
             cmd.append('--verify')
         if not self.opts['keep_wav']:
             cmd.append('--delete-input-file')
@@ -365,9 +365,9 @@ def get_opts():
         parser.add_argument('-f', '--force',
                             action='store_true',
                             help='overwrite existing disc directory if it exists')
-        parser.add_argument('-v', '--verify-encoding',
-                            action='store_false',
-                            help='verify that flac encoded files match their source wav files')
+        parser.add_argument('-n', '--no-verify-encoding',
+                            action='store_true',
+                            help='do not verify that flac encoded files match their source wav files')
         parser.add_argument('-k', '--keep-wav',
                             action='store_true',
                             help='do not delete wave files after successful flac encoding')
