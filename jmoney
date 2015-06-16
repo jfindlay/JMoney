@@ -286,6 +286,8 @@ class FLAC(object):
         if disc_dir:
             self.rip_dir = disc_dir
 
+        self.encode()
+
     def encode(self):
         '''
         encode all `*.wav` files in the disc directory
@@ -296,7 +298,7 @@ class FLAC(object):
             '''
             for track_name in os.listdir(disc_dir):
                 if track_name.endswith('.wav'):
-                    call(cmd, cwd=disc_dir)
+                    call(cmd + [track_name], cwd=disc_dir)
 
         cmd = ['flac', '--keep-foreign-metadata']
         if self.opts['verify_encoding']:
@@ -306,11 +308,11 @@ class FLAC(object):
 
         if hasattr(self, 'rip_dir'):
             encode_disc(cmd, self.rip_dir)
-        elif self.opts['disc_dir']:
-            encode_disc(cmd, self.disc_dir)
+        elif self.opts['encode_dir']:
+            encode_disc(cmd, os.path.join(self.opts['library_dir'], self.opts['encode_dir']))
         else:
-            for disc_dir in self.opts['library_dir']:
-                encode_disc(cmd, disc_dir)
+            for disc_dir in os.listdir(self.opts['library_dir']):
+                encode_disc(cmd, os.path.join(self.opts['library_dir'], disc_dir))
 
 
 def get_opts():
@@ -357,7 +359,7 @@ def get_opts():
                             default=library_dir,
                             help='base directory of music library')
         parser.add_argument('-s', '--read-speed',
-                            type=str,
+                            type=int,
                             default=8,
                             help='disc drive read speed')
         parser.add_argument('-f', '--force',
@@ -401,6 +403,7 @@ def main():
     if {'rip', 'encode'} == opts['action']:
         flac = FLAC(opts, cdparanoia.dest_dir)
     elif 'encode' in opts['action']:
+        print(opts)
         flac = FLAC(opts)
 
     if 'rip' in opts['action']:
