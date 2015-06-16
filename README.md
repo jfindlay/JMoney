@@ -15,5 +15,6 @@ A separate script yet to be written will convert each track to flac format.
 ```console
 # insert a disc into the drive
 $ rip.py --help | less
-$ time rip.py --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8
+$ time rip.py --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8 rip
+$ time rip.py --verify-encoding encode
 ```

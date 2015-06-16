@@ -160,7 +160,7 @@ class FreeDB(object):
             print('\nSelected result: {0}\n'.format(selected_result['title']))
 
 
-class discogs(object):
+class Discogs(object):
     '''
     interaction with discogs
     '''
@@ -270,6 +270,32 @@ class CDParanoia(object):
             disc_record.write(yaml.dump(self.db_record))
 
 
+class FLAC(object):
+    '''
+    flac interaction
+    '''
+    def __init__(self, opts, disc_dir):
+        '''
+        setup opts
+        '''
+        self.opts = opts
+        self.disc_dir = disc_dir
+
+    def encode(self):
+        '''
+        encode all `*.wav` files in the disc directory
+        '''
+        cmd = ['flac', '--keep-foreign-metadata']
+        if self.opts['verify_encoding']:
+            cmd.append('--verify')
+        if not self.opts['keep_wav']:
+            cmd.append('--delete-input-file')
+
+        for track_name in os.listdir(self.disc_dir):
+            if track_name.endswith('.wav'):
+                call(cmd, cwd=self.disc_dir)
+
+
 def get_opts():
     '''
     setup program options
@@ -285,36 +311,45 @@ def get_opts():
         process invocation arguments
         '''
         desc = 'rip CDDA discs and flac encode and tag the tracks with info from a CDDA database'
-        arg_parser = ArgumentParser(description=desc, formatter_class=ArgumentDefaultsHelpFormatter)
-        arg_parser.add_argument('-d', '--device',
-                                type=str,
-                                default='/dev/sr0',
-                                help='CD drive device name')
-        arg_parser.add_argument('-a', '--agent-file',
-                                type=FileType('rb'),
-                                default=agent_file,
-                                help='file containing HTTP client agent name and version conforming to RFC 1945 §3.7')
-        arg_parser.add_argument('-t', '--token-file',
-                                type=FileType('rb'),
-                                default=token_file,
-                                help='file containing discogs API token')
-        arg_parser.add_argument('-m', '--freedb-mirror',
-                                type=str,
-                                default='http://freedb.freedb.org/~cddb/cddb.cgi',
-                                help='freedb mirror URL')
-        arg_parser.add_argument('-l', '--library-dir',
-                                type=str,
-                                default=library_dir,
-                                help='base directory of music library')
-        arg_parser.add_argument('-s', '--read-speed',
-                                type=str,
-                                default=8,
-                                help='disc drive read speed')
-        arg_parser.add_argument('-f', '--force',
-                                action='store_true',
-                                help='overwrite existing disc directory if it exists')
+        parser = ArgumentParser(description=desc, formatter_class=ArgumentDefaultsHelpFormatter)
+        parser.add_argument('-d', '--device',
+                            type=str,
+                            default='/dev/sr0',
+                            help='CD drive device name')
+        parser.add_argument('-a', '--agent-file',
+                            type=FileType('rb'),
+                            default=agent_file,
+                            help='file containing HTTP client agent name and version conforming to RFC 1945 §3.7')
+        parser.add_argument('-t', '--token-file',
+                            type=FileType('rb'),
+                            default=token_file,
+                            help='file containing discogs API token')
+        parser.add_argument('-m', '--freedb-mirror',
+                            type=str,
+                            default='http://freedb.freedb.org/~cddb/cddb.cgi',
+                            help='freedb mirror URL')
+        parser.add_argument('-l', '--library-dir',
+                            type=str,
+                            default=library_dir,
+                            help='base directory of music library')
+        parser.add_argument('-s', '--read-speed',
+                            type=str,
+                            default=8,
+                            help='disc drive read speed')
+        parser.add_argument('-f', '--force',
+                            action='store_true',
+                            help='overwrite existing disc directory if it exists')
+        parser.add_argument('-v', '--verify-encoding',
+                            action='store_false',
+                            help='verify that flac encoded files match their source wav files')
+        parser.add_argument('-k', '--keep-wav',
+                            action='store_true',
+                            help='do not delete wave files after successful flac encoding')
+        parser.add_argument('action',
+                            nargs='*',
+                            help='rip: rip CDDA tracks, encode: encode tracks in flac format')
 
-        return vars(arg_parser.parse_args())
+        return vars(parser.parse_args())
 
     opts = parse_args()
 
@@ -336,6 +371,8 @@ def main():
 
     freedb = FreeDB(opts)
     cdparanoia = CDParanoia(opts, freedb.db_record)
+
+    flac = FLAC(opts, cdparanoia.dest_dir)
 
     cd_drive.open()
 
