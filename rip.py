@@ -248,8 +248,12 @@ class CDParanoia(object):
         '''
         rename ripped tracks
         '''
-        os.rename(os.path.join(self.dest_dir, 'track00.cdda.wav'),
-                  os.path.join(self.dest_dir, '00 - disc TOC.wav'))
+        # not all discs have a TOC track it seems
+        TOC_source = os.path.join(self.dest_dir, 'track00.cdda.wav')
+        if os.path.exists(TOC_source):
+            TOC_dest = os.path.join(self.dest_dir, '00 - disc TOC.wav')
+            os.rename(TOC_source, TOC_dest)
+
         if self.preferred:
             for track_number in range(self.db_record[0]['disc_id'][1]):
                 old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
