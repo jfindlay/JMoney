@@ -5,10 +5,12 @@ import os
 import sys
 import six
 import yaml
-from pprint import pprint
+from pprint import pformat
 from time import sleep
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, FileType
 from subprocess import call
+
+get_input = raw_input if six.PY2 else input
 
 import DiscID, CDDB
 try:
@@ -41,6 +43,125 @@ def encode_dict(d, encoding='UTF-8'):
                 pass
             transcoded_d[k] = v
     return transcoded_d
+
+
+class TextFormat(object):
+    '''
+    ANSI Select Graphic Rendition (SGR) code escape sequence.
+    '''
+    prefix = '\x1b['
+    suffix = 'm'
+    all_codes = {
+        'reset': '0',
+
+        'bold': '1',
+        'faint': '2',
+        'italic': '3',
+        'underline': '4',
+
+        'black': '30',
+        'red': '31',
+        'green': '32',
+        'yellow': '33',
+        'blue': '34',
+        'magenta': '35',
+        'cyan': '36',
+        'white': '37',
+        'extended': '38',
+        'default': '39',
+    }
+
+    def __init__(self, *attrs, **kwargs):
+        '''
+        :param attrs: are the attribute names of any format codes in `codes`
+
+        :param kwargs: may contain
+
+        `reset`, prepend reset SGR code to sequence (default `True`)
+
+        Example:
+
+        .. code-block:: python
+
+            red_underlined = TextFormat('red', 'underline')
+            print(
+                '{0}Can you read this?{1}'
+                ).format(red_underlined, TextFormat('reset'))
+        '''
+        self.codes = [self.all_codes[attr.lower()] for attr in attrs if isinstance(attr, six.string_types)]
+
+        if kwargs.get('reset', True):
+            self.codes[:0] = [self.all_codes['reset']]
+
+        self.opts = kwargs.get('opts', {})
+
+        if self.opts.get('no_color', False):
+            self.sequence = ''
+        else:
+            self.sequence = '%s%s%s' % (self.prefix, ';'.join(self.codes), self.suffix)
+
+    def __call__(self, text, reset=True):
+        '''
+        Format :param text: by prefixing `self.sequence` and suffixing the
+        reset sequence if :param reset: is `True`.
+
+        Examples:
+
+        .. code-block:: python
+
+            green_text = TextFormat('blink', 'green')
+            'The answer is: {0}'.format(green_text(42))
+        '''
+        end = TextFormat('reset') if reset else ''
+        return '%s%s%s' % (self.sequence, text, end)
+
+    def __str__(self):
+        return self.sequence
+
+    def __repr__(self):
+        return self.sequence
+
+
+class Input(object):
+    '''
+    prompt for and collect user input
+    '''
+    def __init__(self, opts):
+        '''
+        setup opts
+        '''
+        self.opts = opts
+        self.prompt_text = TextFormat('bold', 'green')
+        self.invalid_text = TextFormat('bold', 'red')
+
+    def __call__(self, prompt, input_type, valid=None, action=None):
+        '''
+        prompt the user until valid input is received
+
+        `prompt`: the text presented to the user
+
+        `input_type`: a description of the kind of input expected
+
+        `valid`: an iterable of valid responses which are expected to be of
+        type `str` or a single string, both in all lowercase
+
+        `action`: a function that is run with the collected input as an
+        argument
+
+        if `action` is given, the input and the results of `action` on the
+        input are returned, otherwise only the input is returned
+        '''
+        while True:
+            try:
+                value = get_input(self.prompt_text(prompt))
+                if action:
+                    return value, action(value)
+            except Exception:
+                value = None
+            if valid:
+                if value.lower() in [v.lower() for v in valid]:
+                    return value.lower()
+            print(self.invalid_text('Invalid {0}'.format(input_type)))
 
 
 class CDDrive(object):
@@ -80,39 +201,62 @@ class FreeDB(object):
         '''
         self.opts = opts
         self.client_name, self.client_version = opts['agent'].split('/')
-        self.disc_id = DiscID.disc_id(DiscID.open(opts['device']))
-        self.db_record = [{'disc_id': self.disc_id}]
+        disc_id = DiscID.disc_id(DiscID.open(opts['device']))
+        self.info = {'disc_id': disc_id, 'record': []}
+
+        self.input = Input(opts)
+        self.header_text = TextFormat('bold', 'blue')
+        self.disc_text = TextFormat('magenta')
+        self.track_text = TextFormat('yellow')
 
         self.get_disc_info()
         self.get_track_info()
+        self.set_encodings()
         self.get_preferred()
+
+    def _present_results(self, number=None, entry=None):
+        '''
+        present retrieved disc info to the user
+        '''
+        def present_result(number, entry):
+            '''
+            print info from a single entry
+            '''
+            print(self.header_text('\n===== Result {0:>02} =====\n'.format(number + 1)))
+            print(self.disc_text(pformat(entry['disc_info']))) ; print('')
+            for track in range(self.info['disc_id'][1]):
+                track_title = entry['track_info']['TTITLE{0}'.format(track)]
+                print(self.track_text('{0:>02d} - {1}'.format(track + 1, track_title)))
+            print(self.header_text('\n=====================\n'))
+
+        if number and entry:
+            present_result(number, entry)
+        else:
+            for num, ent in enumerate(self.info['record']):
+                present_result(num, ent)
 
     def get_disc_info(self):
         '''
         retrieve disc info
         '''
-        status, results = CDDB.query(self.disc_id,
+        status, results = CDDB.query(self.info['disc_id'],
                                      server_url=self.opts['freedb_mirror'],
                                      client_name=self.client_name,
                                      client_version=self.client_version)
 
         if not str(status).startswith('2'):
             print('Failed to query freedb mirror "{0}" for disc info on disc_id "{1}": '
-                  'HTTP code {2}'.format(self.opts['freedb_mirror'], self.disc_id[0], status))
+                  'HTTP code {2}'.format(self.opts['freedb_mirror'], self.info['disc_id'][0], status))
             sys.exit(exit_codes['freedb_query'])
 
         # a single result will not be enclosed in a list by the CDDB lib
-        results = [results] if isinstance(results, dict) else results
-
-        self.results = [encode_dict(result) for result in results]
+        self.results = [results] if isinstance(results, dict) else results
 
     def get_track_info(self):
         '''
-        retrieve track info for each result
+        retrieve track info for each disc info result
         '''
-        for num, result in enumerate(self.results):
-            print('\n===== Result {0:>02} =====\n'.format(num + 1))
-            pprint(result) ; print('')
+        for result in self.results:
             sleep(1)  # throttle query rate
             status, track_info = CDDB.read(result['category'],
                                            result['disc_id'],
@@ -125,39 +269,62 @@ class FreeDB(object):
                       'HTTP code {1}'.format(self.opts['freedb_mirror'], status))
                 sys.exit(exit_codes['freedb_query'])
 
-            track_info = encode_dict(track_info)
-            self.db_record.append({'disc_info': result, 'track_info': track_info})
+            self.info['record'].append({'disc_info': result, 'track_info': track_info})
 
-            for track in range(self.disc_id[1]):
-                print('Track {0:>02d}: {1}'.format(track + 1, track_info['TTITLE{0}'.format(track)]))
-        print('\n=====================\n')
+    def set_encodings(self):
+        '''
+        set input character encoding for each info set
+        '''
+        def decode_info(coding):
+            '''
+            decode disc and track info with `coding`
+            '''
+            disc_info = encode_dict(entry['disc_info'], coding)
+            track_info = encode_dict(entry['track_info'], coding)
+            return {'disc_info': disc_info, 'track_info': track_info}
+
+        if not len(self.info['record']):
+            return  # only the TOC is known; no disc and track titles available
+
+        suggested_encodings = ['iso-8859-1', 'iso-8859-2', 'UTF-8']
+        coding_prompt = 'Try an encoding (suggested: {0}): '.format(suggested_encodings)
+        yes = ['', 'y', 'yes'] ; no = ['n', 'no']
+
+        # this is a second order prompt loop
+        for number, entry in enumerate(self.info['record']):
+            accepted = False
+            while not accepted:
+                self._present_results(number, entry)
+                coding, decoded_entry = self.input(coding_prompt, 'encoding', action=decode_info)
+
+                self._present_results(number, decoded_entry)
+                accept_prompt = 'Accept encoding ({0})? [Y/n] '.format(coding)
+                accept = self.input(accept_prompt, 'answer', valid=yes + no)
+                if accept in yes:
+                    accepted = True
+                    self.info['record'][number] = decoded_entry
 
     def get_preferred(self):
         '''
         get preferred info set
         '''
-        if len(self.results) > 1:
-            valid_selection = False
-            while valid_selection == False:
-                try:
-                    select_range = '[1-{0}]'.format(len(self.results))
-                    selected_result_num = int(input('Select a preferred result {0}: '.format(select_range)))
-                except Exception:
-                    selected_result_num = None
-                if selected_result_num in range(1, len(self.results) + 1):
-                    valid_selection = True
-                    selected_result = self.results[selected_result_num - 1]
-                    self.db_record[selected_result_num]['preferred'] = True
-                else:
-                    print('Invalid selection')
-        elif len(self.results) == 1:
-            selected_result = self.results[0]
-            self.db_record[1]['preferred'] = True
-        else:
-            print('\nNo freedb results found for disc')
+        self._present_results()
 
-        if len(self.results):
-            print('\nSelected result: {0}\n'.format(selected_result['title']))
+        if len(self.info['record']) == 0:
+            print('\nNo freedb results found for disc')
+            return
+        elif len(self.info['record']) == 1:
+            selected_entry = self.info['record'][0]
+            self.info['record'][0]['preferred'] = True
+        else:
+            select_range = '[1-{0}]'.format(len(self.info['record']))
+            prompt = 'Select a preferred result {0}: '.format(select_range)
+            valid = [i for i in range(1, len(self.info['record']) + 1)]
+            selected_number = self.input(prompt, 'result', valid=valid)
+            selected_entry = self.info['record'][selected_number - 1]
+            selected_entry['preferred'] = True
+
+        print('\nSelected result: {0}\n'.format(selected_entry['disc_info']['title']))
 
 
 class Discogs(object):
@@ -193,30 +360,30 @@ class CDParanoia(object):
     '''
     interaction with cdparanoia
     '''
-    def __init__(self, opts, db_record):
+    def __init__(self, opts, disc_info):
         '''
         setup options and disc information
         '''
         self.opts = opts
-        self.db_record = db_record
+        self.disc_info = disc_info
 
         self.setup_dir()
         self.rip_tracks()
         self.rename_tracks()
-        self.save_db_record()
+        self.save_disc_info()
 
     def setup_dir(self):
         '''
         setup disc directory
         '''
         disc_dir = ''
-        self.preferred = 0
-        for number, entry in enumerate(self.db_record):
+        self.preferred = None
+        for number, entry in enumerate(self.disc_info['record']):
             if 'preferred' in entry:
                 self.preferred = number
                 disc_dir = entry['disc_info']['title'].replace('/', '::')
         if not disc_dir:
-            disc_dir = self.db_record[0]['disc_id'][0]
+            disc_dir = self.disc_info['disc_id'][0]
 
         self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
         if os.path.exists(self.dest_dir):
@@ -227,7 +394,8 @@ class CDParanoia(object):
             else:
                 print('Destination directory, "{0}", exists'.format(self.dest_dir))
                 sys.exit(exit_codes['disc_dir'])
-        else:
+
+        if not os.path.exists(self.dest_dir):
             os.makedirs(self.dest_dir)
 
     def rip_tracks(self):
@@ -248,30 +416,30 @@ class CDParanoia(object):
         '''
         rename ripped tracks
         '''
-        # not all discs have a TOC track it seems
+        # not all discs have a TOC track
         TOC_source = os.path.join(self.dest_dir, 'track00.cdda.wav')
         if os.path.exists(TOC_source):
             TOC_dest = os.path.join(self.dest_dir, '00 - disc TOC.wav')
             os.rename(TOC_source, TOC_dest)
 
-        if self.preferred:
-            for track_number in range(self.db_record[0]['disc_id'][1]):
+        if self.preferred is not None:
+            for track_number in range(self.disc_info['disc_id'][1]):
                 old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
-                track_name = self.db_record[self.preferred]['track_info']['TTITLE{0}'.format(track_number)]
+                track_name = self.disc_info['record'][self.preferred]['track_info']['TTITLE{0}'.format(track_number)]
                 new_name = '{0:02} - {1}.wav'.format(track_number + 1, track_name)
                 os.rename(os.path.join(self.dest_dir, old_name), os.path.join(self.dest_dir, new_name))
 
-    def save_db_record(self):
+    def save_disc_info(self):
         '''
-        save database record in disc directory
+        save disc TOC and database record in disc directory
         '''
-        if len(self.db_record) == 1:
+        if not len(self.disc_info['record']):
             print('\nNo CDDA database records were found for {0}; '
                   'you will need to name the disc directory, {1}, and tracks manually'
-                  ''.format(self.db_record[0]['disc_id'][0], self.dest_dir))
+                  ''.format(self.disc_info['disc_id'][0], self.dest_dir))
 
         with open(os.path.join(self.dest_dir, '00 - disc info.yaml'), 'wb') as disc_record:
-            disc_record.write(yaml.dump(self.db_record))
+            disc_record.write(yaml.dump(self.disc_info))
 
 
 class FLAC(object):
@@ -374,6 +542,9 @@ def get_opts():
         parser.add_argument('-e', '--encode-dir',
                             type=str,
                             help='encode the tracks in a specific disc dir')
+        parser.add_argument('-C', '--no-color',
+                            action='store_true',
+                            help='disable colorized output')
 
         return vars(parser.parse_args())
 
@@ -398,12 +569,11 @@ def main():
         cd_drive.close()
 
         freedb = FreeDB(opts)
-        cdparanoia = CDParanoia(opts, freedb.db_record)
+        cdparanoia = CDParanoia(opts, freedb.info)
 
     if {'rip', 'encode'} == opts['action']:
         flac = FLAC(opts, cdparanoia.dest_dir)
     elif 'encode' in opts['action']:
-        print(opts)
         flac = FLAC(opts)
 
     if 'rip' in opts['action']:
