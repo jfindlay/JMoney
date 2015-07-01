@@ -5,7 +5,6 @@ import os
 import sys
 import six
 import yaml
-from pprint import pformat
 from time import sleep
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, FileType
 from subprocess import call
@@ -15,9 +14,9 @@ get_input = raw_input if six.PY2 else input
 import DiscID, CDDB
 try:
     import discogs_client
-    HAS_DISCOGS=True
+    HAS_DISCOGS = True
 except ImportError:
-    HAS_DISCOGS=False
+    HAS_DISCOGS = False
 
 
 exit_codes = {'disc_drive': 11,
@@ -221,7 +220,8 @@ class FreeDB(object):
             print info from a single entry
             '''
             print(self.header_text('\n===== Result {0:>02} =====\n'.format(number + 1)))
-            print(self.disc_text(pformat(entry['disc_info']))) ; print('')
+            for key in entry['disc_info']:
+                print(self.disc_text('{0}: {1}'.format(key, entry['disc_info'][key])))
             for track in range(self.info['disc_id'][1]):
                 track_title = entry['track_info']['TTITLE{0}'.format(track)]
                 print(self.track_text('{0:>02d} - {1}'.format(track + 1, track_title)))
