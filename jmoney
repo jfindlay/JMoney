@@ -26,22 +26,20 @@ exit_codes = {'disc_drive': 11,
               'rip_disc': 41}
 
 
-def encode_dict(d, encoding='UTF-8'):
+def encode_dict(d, coding):
     '''
     encode top level key and value strings in `d` in `encoding`
     '''
-    codings = ['iso-8859-1']  # list of codings to try
     transcoded_d = {}
     for k,v in d.items():
-        for coding in codings:
-            try:
-                if isinstance(k, six.string_types):
-                    k = k.decode(coding).encode(encoding)
-                if isinstance(v, six.string_types):
-                    v = v.decode(coding).encode(encoding)
-            except UnicodeDecodeError:
-                pass
-            transcoded_d[k] = v
+        try:
+            if isinstance(k, six.string_types):
+                k = k.decode(coding, 'ignore').encode('UTF-8')
+            if isinstance(v, six.string_types):
+                v = v.decode(coding, 'ignore').encode('UTF-8')
+        except UnicodeDecodeError:
+            pass
+        transcoded_d[k] = v
     return transcoded_d
 
 
@@ -229,7 +227,7 @@ class FreeDB(object):
                 print(self.track_text('{0:>02d} - {1}'.format(track + 1, track_title)))
             print(self.header_text('\n=====================\n'))
 
-        if number and entry:
+        if number is not None and entry is not None:
             present_result(number, entry)
         else:
             for num, ent in enumerate(self.info['record']):
@@ -298,7 +296,7 @@ class FreeDB(object):
                 coding, decoded_entry = self.input(coding_prompt, 'encoding', action=decode_info)
 
                 self._present_results(number, decoded_entry)
-                accept_prompt = 'Accept encoding ({0})? [Y/n] '.format(coding)
+                accept_prompt = 'Accept source encoding ({0})? [Y/n] '.format(coding)
                 accept = self.input(accept_prompt, 'answer', valid=yes + no)
                 if accept in yes:
                     accepted = True
