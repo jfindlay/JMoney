@@ -424,7 +424,7 @@ class CDParanoia(object):
             for track_number in range(self.disc_info['disc_id'][1]):
                 old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
                 track_name = self.disc_info['record'][self.preferred]['track_info']['TTITLE{0}'.format(track_number)]
-                new_name = '{0:02} - {1}.wav'.format(track_number + 1, track_name)
+                new_name = '{0:02} - {1}.wav'.format(track_number + 1, track_name.replace('/', '::'))
                 os.rename(os.path.join(self.dest_dir, old_name), os.path.join(self.dest_dir, new_name))
 
     def save_disc_info(self):
