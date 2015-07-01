@@ -162,9 +162,9 @@ class Input(object):
             print(self.invalid_text('Invalid {0}'.format(input_type)))
 
 
-class CDDrive(object):
+class DiscDrive(object):
     '''
-    interaction with CD drive
+    interaction with disc drive
     '''
     def __init__(self, opts):
         '''
@@ -563,8 +563,8 @@ def main():
     opts = get_opts()
 
     if 'rip' in opts['action']:
-        cd_drive = CDDrive(opts)
-        cd_drive.close()
+        disc_drive = DiscDrive(opts)
+        disc_drive.close()
 
         freedb = FreeDB(opts)
         cdparanoia = CDParanoia(opts, freedb.info)
@@ -575,7 +575,7 @@ def main():
         flac = FLAC(opts)
 
     if 'rip' in opts['action']:
-        cd_drive.open()
+        disc_drive.open()
 
 
 if __name__ == '__main__':
