@@ -462,7 +462,7 @@ class FLAC(object):
             '''
             encode all the tracks from a disc
             '''
-            for track_name in os.listdir(disc_dir):
+            for track_name in sorted(os.listdir(disc_dir)):
                 if track_name.endswith('.wav'):
                     call(cmd + [track_name], cwd=disc_dir)
 
@@ -477,7 +477,7 @@ class FLAC(object):
         elif self.opts['encode_dir']:
             encode_disc(cmd, os.path.join(self.opts['library_dir'], self.opts['encode_dir']))
         else:
-            for disc_dir in os.listdir(self.opts['library_dir']):
+            for disc_dir in sorted(os.listdir(self.opts['library_dir'])):
                 encode_disc(cmd, os.path.join(self.opts['library_dir'], disc_dir))
 
 
