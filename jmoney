@@ -375,13 +375,16 @@ class CDParanoia(object):
         setup disc directory
         '''
         disc_dir = ''
+        disc_id = hex(self.disc_info['disc_id'][0])
         self.preferred = None
+
         for number, entry in enumerate(self.disc_info['record']):
             if 'preferred' in entry:
                 self.preferred = number
-                disc_dir = entry['disc_info']['title'].replace('/', '::')
+                disc_title = entry['disc_info']['title'].replace('/', '::')
+                disc_dir = '{0}.{1}'.format(disc_title, disc_id)
         if not disc_dir:
-            disc_dir = self.disc_info['disc_id'][0]
+            disc_dir = disc_id
 
         self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
         if os.path.exists(self.dest_dir):
