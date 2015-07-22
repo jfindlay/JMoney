@@ -11,6 +11,11 @@ from subprocess import call
 
 get_input = raw_input if six.PY2 else input
 
+try:
+    import chardet
+    HAS_CHARDET = True
+except ImportError:
+    HAS_CHARDET = False
 import DiscID, CDDB
 try:
     import discogs_client
@@ -40,6 +45,22 @@ def encode_dict(d, coding):
             pass
         transcoded_d[k] = v
     return transcoded_d
+
+
+def suggest_encodings(entry):
+    '''
+    try to use chardet to determine disc record encoding
+    '''
+    if HAS_CHARDET:
+        detected = []
+        for d in entry['disc_info'], entry['track_info']:
+            for k, v in d.items():
+                if isinstance(v, six.string_types):
+                    det = chardet.detect(v)
+                    detected.append((det['encoding'], 'conf: {0}'.format(det['confidence'])))
+        return set(detected)
+    else:
+        return ['iso-8859-1', 'iso-8859-2', 'UTF-8']
 
 
 class TextFormat(object):
@@ -284,12 +305,11 @@ class FreeDB(object):
         if not len(self.info['record']):
             return  # only the TOC is known; no disc and track titles available
 
-        suggested_encodings = ['iso-8859-1', 'iso-8859-2', 'UTF-8']
-        coding_prompt = 'Try an encoding (suggested: {0}): '.format(suggested_encodings)
         yes = ['', 'y', 'yes'] ; no = ['n', 'no']
-
         # this is a second order prompt loop
         for number, entry in enumerate(self.info['record']):
+            suggested_encodings = suggest_encodings(entry)
+            coding_prompt = 'Try an encoding (suggested: {0}): '.format(suggested_encodings)
             accepted = False
             while not accepted:
                 self._present_results(number, entry)
