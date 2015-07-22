@@ -337,8 +337,8 @@ class FreeDB(object):
         else:
             select_range = '[1-{0}]'.format(len(self.info['record']))
             prompt = 'Select a preferred result {0}: '.format(select_range)
-            valid = [i for i in range(1, len(self.info['record']) + 1)]
-            selected_number = self.input(prompt, 'result', valid=valid)
+            valid = [str(i) for i in range(1, len(self.info['record']) + 1)]
+            selected_number = int(self.input(prompt, 'result', valid=valid))
             selected_entry = self.info['record'][selected_number - 1]
             selected_entry['preferred'] = True
 
