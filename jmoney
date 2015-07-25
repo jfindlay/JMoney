@@ -396,6 +396,15 @@ class CDParanoia(object):
         '''
         setup disc directory
         '''
+        def find_disc_id_in_library(disc_id):
+            '''
+            try to find a directory in the library having the disc_id
+            '''
+            library = os.listdir(self.opts['library_dir'])
+            for disc_dir in library:
+                if disc_dir.endswith(disc_id):
+                    return disc_dir
+
         disc_dir = ''
         disc_id = hex(self.disc_info['disc_id'][0])
         self.preferred = None
@@ -408,14 +417,23 @@ class CDParanoia(object):
         if not disc_dir:
             disc_dir = disc_id
 
+        other_dir = find_disc_id_in_library(disc_id)
+        if other_dir:
+            if self.opts['force']:
+                print('Warning: Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, other_dir))
+            else:
+                print('Error: Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, other_dir))
+                sys.exit(exit_codes['disc_dir'])
+
         self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
         if os.path.exists(self.dest_dir):
             if self.opts['force']:
+                print('Warning: Force option requested; overwriting destination directory, "{0}"'.format(self.dest_dir))
                 for track in os.listdir(self.dest_dir):
                     os.remove(track)
                 os.rmdir(self.dest_dir)
             else:
-                print('Destination directory, "{0}", exists'.format(self.dest_dir))
+                print('Error: Destination directory, "{0}", exists'.format(self.dest_dir))
                 sys.exit(exit_codes['disc_dir'])
 
         if not os.path.exists(self.dest_dir):
@@ -555,7 +573,7 @@ def get_opts():
                             help='disc drive read speed')
         parser.add_argument('-f', '--force',
                             action='store_true',
-                            help='overwrite existing disc directory if it exists')
+                            help='overwrite existing disc directory if it exists or ignore existing disc director(y|ies) with same disc_id')
         parser.add_argument('-n', '--no-verify-encoding',
                             action='store_true',
                             help='do not verify that flac encoded files match their source wav files')
