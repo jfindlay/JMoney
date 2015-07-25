@@ -57,6 +57,8 @@ def suggest_encodings(entry):
             for k, v in d.items():
                 if isinstance(v, six.string_types):
                     det = chardet.detect(v)
+                    if det['encoding'] == None:
+                        continue
                     detected.append((det['encoding'], 'conf: {0}'.format(det['confidence'])))
         return set(detected)
     else:
