@@ -39,9 +39,9 @@ def encode_dict(d, coding):
     for k,v in d.items():
         try:
             if isinstance(k, six.string_types):
-                k = k.decode(coding, 'ignore').encode('UTF-8')
+                k = k.decode(coding, 'replace').encode('UTF-8')
             if isinstance(v, six.string_types):
-                v = v.decode(coding, 'ignore').encode('UTF-8')
+                v = v.decode(coding, 'replace').encode('UTF-8')
         except UnicodeDecodeError:
             pass
         transcoded_d[k] = v
