@@ -7,7 +7,7 @@ import six
 import yaml
 import logging
 from time import sleep
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, FileType
+from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter, FileType
 from subprocess import call
 
 get_input = raw_input if six.PY2 else input
@@ -535,6 +535,20 @@ def get_opts():
 
     library_dir = os.path.join(os.environ['HOME'], 'Music')
 
+    def directory(d):
+        '''
+        check whether the supplied directory exists, create it if it doesn't,
+        and exit if it is not a directory
+        '''
+        if not os.path.exists(d):
+            if not os.path.islink(d):
+                os.makedirs(d)
+                return d
+            raise ArgumentTypeError('{d} exists and is not a directory'.format(d=d))
+        elif os.path.isdir(d):
+            return d
+        raise ArgumentTypeError('cannot create directory {d}'.format(d=d))
+
     def parse_args():
         '''
         process invocation arguments
@@ -565,7 +579,7 @@ def get_opts():
                             default='http://freedb.freedb.org/~cddb/cddb.cgi',
                             help='freedb mirror URL')
         parser.add_argument('-l', '--library-dir',
-                            type=str,
+                            type=directory,
                             default=library_dir,
                             help='base directory of music library')
         parser.add_argument('-s', '--read-speed',
