@@ -261,15 +261,20 @@ class FreeDB(object):
         '''
         retrieve disc info
         '''
-        status, results = CDDB.query(self.info['disc_id'],
-                                     server_url=self.opts['freedb_mirror'],
-                                     client_name=self.client_name,
-                                     client_version=self.client_version)
-
-        if not str(status).startswith('2'):
+        status, results = 0, None
+        try:
+            status, results = CDDB.query(self.info['disc_id'],
+                                         server_url=self.opts['freedb_mirror'],
+                                         client_name=self.client_name,
+                                         client_version=self.client_version)
+        except IOError:
+            logging.error('disc_id "{0}" not found on freedb'.format(self.info['disc_id']))
+        if status >= 400:
             logging.error('Failed to query freedb mirror "{0}" for disc info on disc_id "{1}": '
                           'HTTP code {2}'.format(self.opts['freedb_mirror'], self.info['disc_id'][0], status))
             sys.exit(exit_codes['freedb_query'])
+        if not results:
+            results = [{'category': None, 'disc_id': self.info['disc_id']}]
 
         # a single result will not be enclosed in a list by the CDDB lib
         self.results = [results] if isinstance(results, dict) else results
@@ -279,6 +284,8 @@ class FreeDB(object):
         retrieve track info for each disc info result
         '''
         for result in self.results:
+            if not result['category']:
+                continue
             sleep(1)  # throttle query rate
             status, track_info = CDDB.read(result['category'],
                                            result['disc_id'],
