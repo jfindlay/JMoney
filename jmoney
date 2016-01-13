@@ -456,7 +456,7 @@ class CDParanoia(object):
                              '--output-wav',
                              '--batch',
                              '--force-read-speed={0}'.format(self.opts['read_speed']),
-                             '--never-skip']
+                             '--never-skip=128']
         if call(cmd, cwd=self.dest_dir) != 0:
             logging.error('\nFailed to rip disc')
             sys.exit(exit_codes['rip_disc'])
@@ -517,17 +517,20 @@ class FLAC(object):
                 if track_name.endswith('.wav'):
                     call(cmd + [track_name], cwd=disc_dir)
 
-        cmd = ['flac', '--keep-foreign-metadata']
+        cmd = ['flac', '--silent']
         if not self.opts['no_verify_encoding']:
             cmd.append('--verify')
         if not self.opts['keep_wav']:
             cmd.append('--delete-input-file')
 
         if hasattr(self, 'rip_dir'):
+            logging.info('Compressing tracks in disc dir {}'.format(self.rip_dir))
             encode_disc(cmd, self.rip_dir)
         elif self.opts['encode_dir']:
+            logging.info('Compressing tracks in disc dir {}'.format(self.encode_dir))
             encode_disc(cmd, os.path.join(self.opts['library_dir'], self.opts['encode_dir']))
         else:
+            logging.info('Compressing all tracks in library dir {}'.format(self.library_dir))
             for disc_dir in sorted(os.listdir(self.opts['library_dir'])):
                 encode_disc(cmd, os.path.join(self.opts['library_dir'], disc_dir))
 
