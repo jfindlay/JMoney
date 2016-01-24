@@ -509,6 +509,12 @@ class FLAC(object):
         '''
         encode all `*.wav` files in the disc directory
         '''
+        def show(disc_dir):
+            '''
+            print the contents of disc_dir
+            '''
+            call(['du', '-h', disc_dir])
+
         def encode_disc(cmd, disc_dir):
             '''
             encode all the tracks from a disc
@@ -526,11 +532,13 @@ class FLAC(object):
         if hasattr(self, 'rip_dir'):
             logging.info('Compressing tracks in disc dir {}'.format(self.rip_dir))
             encode_disc(cmd, self.rip_dir)
+            show(self.rip_dir)
         elif self.opts['encode_dir']:
-            logging.info('Compressing tracks in disc dir {}'.format(self.encode_dir))
+            logging.info('Compressing tracks in disc dir {}'.format(self.opts['encode_dir']))
             encode_disc(cmd, os.path.join(self.opts['library_dir'], self.opts['encode_dir']))
+            show(self.opts['encode_dir'])
         else:
-            logging.info('Compressing all tracks in library dir {}'.format(self.library_dir))
+            logging.info('Compressing all tracks in library dir {}'.format(self.opts['library_dir']))
             for disc_dir in sorted(os.listdir(self.opts['library_dir'])):
                 encode_disc(cmd, os.path.join(self.opts['library_dir'], disc_dir))
 
@@ -572,6 +580,9 @@ def get_opts():
                                  'and the tracks are encoded sequentially as a single operation, '
                                  'otherwise if only `rip` is given, only ripping occurs, or '
                                  'if only `encode` is specified, all unencoded tracks in the library dir are encoded')
+        parser.add_argument('-q', '--quiet',
+                            action='store_true',
+                            help='quiet output')
         parser.add_argument('-d', '--device',
                             type=str,
                             default='/dev/sr0',
@@ -629,6 +640,8 @@ def main():
     database
     '''
     opts = get_opts()
+
+    logging.setLevel('WARNING' if opts['quiet'] else 'INFO')
 
     if 'rip' in opts['action']:
         disc_drive = DiscDrive(opts)
