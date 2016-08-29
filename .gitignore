@@ -1,4 +1,5 @@
 agent
 token
+discogs_client/
 *.py?
 .*.sw?
