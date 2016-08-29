@@ -25,6 +25,7 @@ except ImportError:
     HAS_DISCOGS = False
 
 
+log = logging.getLogger(__name__)
 exit_codes = {'disc_drive': 11,
               'freedb_query': 21,
               'disc_dir': 31,
@@ -200,7 +201,7 @@ class DiscDrive(object):
         close disc drive drawer
         '''
         if call(['eject', '-t']) != 0:
-            logging.error('\nFailed to close disc drive drawer')
+            log.error('\nFailed to close disc drive drawer')
             sys.exit(exit_codes['disc_drive'])
 
     def open(self):
@@ -208,7 +209,7 @@ class DiscDrive(object):
         open disc drive drawer
         '''
         if call(['eject']) != 0:
-            logging.error('\nFailed to open disc drive')
+            log.error('\nFailed to open disc drive')
             sys.exit(exit_codes['disc_drive'])
 
 
@@ -268,9 +269,9 @@ class FreeDB(object):
                                          client_name=self.client_name,
                                          client_version=self.client_version)
         except IOError:
-            logging.error('disc_id "{0}" not found on freedb'.format(self.info['disc_id']))
+            log.error('disc_id "{0}" not found on freedb'.format(self.info['disc_id']))
         if status >= 400:
-            logging.error('Failed to query freedb mirror "{0}" for disc info on disc_id "{1}": '
+            log.error('Failed to query freedb mirror "{0}" for disc info on disc_id "{1}": '
                           'HTTP code {2}'.format(self.opts['freedb_mirror'], self.info['disc_id'][0], status))
             sys.exit(exit_codes['freedb_query'])
         if not results:
@@ -294,7 +295,7 @@ class FreeDB(object):
                                            client_version=self.client_version)
 
             if not str(status).startswith('2'):
-                logging.error('Failed to query freedb mirror {0} for track info: '
+                log.error('Failed to query freedb mirror {0} for track info: '
                               'HTTP code {1}'.format(self.opts['freedb_mirror'], status))
                 sys.exit(exit_codes['freedb_query'])
 
@@ -364,7 +365,7 @@ class Discogs(object):
         setup options
         '''
         if not HAS_DISCOGS:
-            logging.error('discogs client library is unavailable')
+            log.error('discogs client library is unavailable')
         else:
             self.opts = opts
             self.d = discogs_client.Client(self.opts['agent'],
@@ -375,7 +376,7 @@ class Discogs(object):
         query discogs database
         '''
         if not HAS_DISCOGS:
-            logging.error('discogs client library is unavailable')
+            log.error('discogs client library is unavailable')
         else:
             results = self.d.search('Stockholm By Night', type='release')
             artist = results[0].artists[0]
@@ -428,20 +429,20 @@ class CDParanoia(object):
         other_dir = find_disc_id_in_library(disc_id)
         if other_dir:
             if self.opts['force']:
-                logging.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, other_dir))
+                log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, other_dir))
             else:
-                logging.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, other_dir))
+                log.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, other_dir))
                 sys.exit(exit_codes['disc_dir'])
 
         self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
         if os.path.exists(self.dest_dir):
             if self.opts['force']:
-                logging.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.dest_dir))
+                log.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.dest_dir))
                 for track in os.listdir(self.dest_dir):
                     os.remove(track)
                 os.rmdir(self.dest_dir)
             else:
-                logging.error('Destination directory, "{0}", exists'.format(self.dest_dir))
+                log.error('Destination directory, "{0}", exists'.format(self.dest_dir))
                 sys.exit(exit_codes['disc_dir'])
 
         if not os.path.exists(self.dest_dir):
@@ -458,7 +459,7 @@ class CDParanoia(object):
                              '--force-read-speed={0}'.format(self.opts['read_speed']),
                              '--never-skip=128']
         if call(cmd, cwd=self.dest_dir) != 0:
-            logging.error('\nFailed to rip disc')
+            log.error('\nFailed to rip disc')
             sys.exit(exit_codes['rip_disc'])
 
     def rename_tracks(self):
@@ -532,15 +533,15 @@ class FLAC(object):
             cmd.append('--delete-input-file')
 
         if hasattr(self, 'rip_dir'):
-            logging.info('Compressing tracks in disc dir {}'.format(self.rip_dir))
+            log.info('Compressing tracks in disc dir {}'.format(self.rip_dir))
             encode_disc(cmd, self.rip_dir)
             show(self.rip_dir)
         elif self.opts['encode_dir']:
-            logging.info('Compressing tracks in disc dir {}'.format(self.opts['encode_dir']))
+            log.info('Compressing tracks in disc dir {}'.format(self.opts['encode_dir']))
             encode_disc(cmd, os.path.join(self.opts['library_dir'], self.opts['encode_dir']))
             show(self.opts['encode_dir'])
         else:
-            logging.info('Compressing all tracks in library dir {}'.format(self.opts['library_dir']))
+            log.info('Compressing all tracks in library dir {}'.format(self.opts['library_dir']))
             for disc_dir in sorted(os.listdir(self.opts['library_dir'])):
                 encode_disc(cmd, os.path.join(self.opts['library_dir'], disc_dir))
 
@@ -643,7 +644,7 @@ def main():
     '''
     opts = get_opts()
 
-    logging.setLevel('WARNING' if opts['quiet'] else 'INFO')
+    log.setLevel('WARNING' if opts['quiet'] else 'INFO')
 
     if 'rip' in opts['action']:
         disc_drive = DiscDrive(opts)
