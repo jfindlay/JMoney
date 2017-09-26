@@ -341,7 +341,7 @@ class FreeDB(object):
         self._present_results()
 
         if len(self.info['record']) == 0:
-            print('\nNo freedb results found for disc')
+            log.warning('\nNo freedb results found for disc')
             return
         elif len(self.info['record']) == 1:
             selected_entry = self.info['record'][0]
@@ -354,7 +354,7 @@ class FreeDB(object):
             selected_entry = self.info['record'][selected_number - 1]
             selected_entry['preferred'] = True
 
-        print('\nSelected result: {0}\n'.format(selected_entry['disc_info']['title']))
+        log.info('Selected result: {0}'.format(selected_entry['disc_info']['title']))
 
 
 class Discogs(object):
@@ -487,9 +487,9 @@ class CDParanoia(object):
         save disc TOC and database record in disc directory
         '''
         if not len(self.disc_info['record']):
-            print('\nNo CDDA database records were found for {0}; '
-                  'you will need to name the disc directory, {1}, and tracks manually'
-                  ''.format(self.disc_info['disc_id'][0], self.dest_dir))
+            log.warning('\nNo CDDA database records were found for {0}; '
+                     'you will need to name the disc directory, {1}, and tracks manually'
+                     ''.format(self.disc_info['disc_id'][0], self.dest_dir))
 
         with open(os.path.join(self.dest_dir, '00 - disc info.yaml'), 'wb') as disc_record:
             disc_record.write(yaml.dump(self.disc_info))
