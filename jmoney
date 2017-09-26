@@ -55,25 +55,15 @@ def suggest_encodings(entry):
     try to use chardet to determine disc record encoding
     '''
     if HAS_CHARDET:
+        # Get encoding of text fields
         detected = []
-        # Get encodings for each text field
+        text = b''
         for d in entry['disc_info'], entry['track_info']:
             for k, v in d.items():
-                if isinstance(v, six.string_types):
-                    det = chardet.detect(v)
-                    if det['encoding'] == None:
-                        continue
-                    detected.append((det['encoding'], 'conf: {0:.2}'.format(det['confidence'])))
-
-        # Simplify the encoding metadata some more
-        simplified_detected = {}
-        for det in sorted(set(detected), key=lambda e: e[0]):
-            if not det[0] in simplified_detected:
-                simplified_detected[det[0]] = [det[1]]
-            else:
-                simplified_detected[det[0]].append(det[1])
-
-        return simplified_detected
+                if isinstance(v, (six.string_types, bytes)):
+                    text += v
+        det = chardet.detect(text)
+        return (det.get('encoding'), 'conf: {0:.2}'.format(det.get('confidence', 0)))
     else:
         return ['iso-8859-1', 'iso-8859-2', 'UTF-8']
 
