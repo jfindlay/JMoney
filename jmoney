@@ -25,7 +25,8 @@ except ImportError:
     HAS_DISCOGS = False
 
 
-log = logging.getLogger(__name__)
+logging.info('Begin')
+log = logging.getLogger('jmoney')
 exit_codes = {'disc_drive': 11,
               'freedb_query': 21,
               'disc_dir': 31,
