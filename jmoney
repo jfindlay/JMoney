@@ -440,7 +440,7 @@ class CDParanoia(object):
             if self.opts['force']:
                 log.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.dest_dir))
                 for track in os.listdir(self.dest_dir):
-                    os.remove(track)
+                    os.remove(os.path.join(self.dest_dir, track))
                 os.rmdir(self.dest_dir)
             else:
                 log.error('Destination directory, "{0}", exists'.format(self.dest_dir))
