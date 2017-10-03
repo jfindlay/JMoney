@@ -429,10 +429,11 @@ class CDParanoia(object):
 
         other_dir = find_disc_id_in_library(disc_id)
         if other_dir:
+            full_other_dir = os.path.join(self.opts['library_dir'], other_dir)
             if self.opts['force']:
-                log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, other_dir))
+                log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, full_other_dir))
             else:
-                log.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, other_dir))
+                log.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, full_other_dir))
                 sys.exit(exit_codes['disc_dir'])
 
         self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
@@ -448,6 +449,7 @@ class CDParanoia(object):
 
         if not os.path.exists(self.dest_dir):
             os.makedirs(self.dest_dir)
+        log.info('Writing disc to {0}'.format(self.dest_dir))
 
     def rip_tracks(self):
         '''
@@ -562,6 +564,7 @@ def get_opts():
         check whether the supplied directory exists, create it if it doesn't,
         and exit if it is not a directory
         '''
+        d = os.path.expanduser(os.path.expandvars(d))
         if not os.path.exists(d):
             if not os.path.islink(d):
                 os.makedirs(d)
