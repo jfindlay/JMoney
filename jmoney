@@ -4,13 +4,14 @@
 import os
 import sys
 import six
+import stat
 import yaml
+import shutil
 import logging
+import tempfile
 from time import sleep
 from argparse import ArgumentParser, ArgumentTypeError, ArgumentDefaultsHelpFormatter, FileType
 from subprocess import call
-
-get_input = raw_input if six.PY2 else input
 
 try:
     import chardet
@@ -23,19 +24,26 @@ try:
     HAS_DISCOGS = True
 except ImportError:
     HAS_DISCOGS = False
+try:
+    shutil.get_terminal_size
+    os.environ['COLUMNS'] = str(shutil.get_terminal_size().columns)
+except AttributeError:
+    pass  # Cannot set argparse output width to actual terminal size
+
+get_input = raw_input if six.PY2 else input
 
 
 logging.info('Begin')
 log = logging.getLogger('jmoney')
 exit_codes = {'disc_drive': 11,
               'freedb_query': 21,
-              'disc_dir': 31,
+              'disc_path': 31,
               'rip_disc': 41}
 
 
 def encode_dict(d, coding):
     '''
-    encode top level key and value strings in `d` in `encoding`
+    Encode top level key and value strings in `d` in `encoding`
     '''
     transcoded_d = {}
     for k,v in d.items():
@@ -52,7 +60,7 @@ def encode_dict(d, coding):
 
 def suggest_encodings(entry):
     '''
-    try to use chardet to determine disc record encoding
+    Try to use chardet to determine disc record encoding
     '''
     if HAS_CHARDET:
         # Get encoding of text fields
@@ -68,9 +76,9 @@ def suggest_encodings(entry):
         return ['iso-8859-1', 'iso-8859-2', 'UTF-8']
 
 
-class TextFormat(object):
+class TextFormat:
     '''
-    ANSI Select Graphic Rendition (SGR) code escape sequence.
+    ANSI Select Graphic Rendition (SGR) code escape sequence formatting
     '''
     prefix = '\x1b['
     suffix = 'm'
@@ -96,11 +104,11 @@ class TextFormat(object):
 
     def __init__(self, *attrs, **kwargs):
         '''
-        :param attrs: are the attribute names of any format codes in `codes`
+        :param attrs: Are the attribute names of any format codes in
+            ``all_codes``
 
-        :param kwargs: may contain
-
-        `reset`, prepend reset SGR code to sequence (default `True`)
+        :param kwargs: May contain
+            - ``reset``, prepend reset SGR code to sequence (default ``True``)
 
         Example:
 
@@ -121,14 +129,14 @@ class TextFormat(object):
         if self.opts.get('no_color', False):
             self.sequence = ''
         else:
-            self.sequence = '%s%s%s' % (self.prefix, ';'.join(self.codes), self.suffix)
+            self.sequence = '{}{}{}'.format(self.prefix, ';'.join(self.codes), self.suffix)
 
     def __call__(self, text, reset=True):
         '''
-        Format :param text: by prefixing `self.sequence` and suffixing the
-        reset sequence if :param reset: is `True`.
+        Format :param text: by prefixing ``self.sequence`` and suffixing the
+        reset sequence if :param reset: is ``True``.
 
-        Examples:
+        Example:
 
         .. code-block:: python
 
@@ -136,7 +144,7 @@ class TextFormat(object):
             'The answer is: {0}'.format(green_text(42))
         '''
         end = TextFormat('reset') if reset else ''
-        return '%s%s%s' % (self.sequence, text, end)
+        return '{}{}{}'.format(self.sequence, text, end)
 
     def __str__(self):
         return self.sequence
@@ -145,13 +153,13 @@ class TextFormat(object):
         return self.sequence
 
 
-class Input(object):
+class Input:
     '''
-    prompt for and collect user input
+    Prompt for and collect user input
     '''
     def __init__(self, opts):
         '''
-        setup opts
+        Setup opts
         '''
         self.opts = opts
         self.prompt_text = TextFormat('bold', 'green')
@@ -159,19 +167,19 @@ class Input(object):
 
     def __call__(self, prompt, input_type, valid=None, action=None):
         '''
-        prompt the user until valid input is received
+        Prompt the user until valid input is received
 
-        `prompt`: the text presented to the user
+        ``prompt``: The text presented to the user
 
-        `input_type`: a description of the kind of input expected
+        ``input_type``: A description of the kind of input expected
 
-        `valid`: an iterable of valid responses which are expected to be of
-        type `str` or a single string, both in all lowercase
+        ``valid``: An iterable of valid responses which are expected to be of
+        type ``str`` or a single string, both in all lowercase
 
-        `action`: a function that is run with the collected input as an
+        ``action``: A function that is run with the collected input as an
         argument
 
-        if `action` is given, the input and the results of `action` on the
+        If ``action`` is given, the input and the results of ``action`` on the
         input are returned, otherwise only the input is returned
         '''
         while True:
@@ -187,19 +195,19 @@ class Input(object):
             print(self.invalid_text('Invalid {0}'.format(input_type)))
 
 
-class DiscDrive(object):
+class DiscDrive:
     '''
-    interaction with disc drive
+    Interaction with disc drive
     '''
     def __init__(self, opts):
         '''
-        setup options
+        Setup options
         '''
         self.opts = opts
 
     def close(self):
         '''
-        close disc drive drawer
+        Close disc drive drawer
         '''
         if call(['eject', '-t']) != 0:
             log.error('\nFailed to close disc drive drawer')
@@ -207,20 +215,20 @@ class DiscDrive(object):
 
     def open(self):
         '''
-        open disc drive drawer
+        Open disc drive drawer
         '''
         if call(['eject']) != 0:
             log.error('\nFailed to open disc drive')
             sys.exit(exit_codes['disc_drive'])
 
 
-class FreeDB(object):
+class FreeDB:
     '''
-    interaction with freedb
+    Interaction with freedb
     '''
     def __init__(self, opts):
         '''
-        setup parameters, options
+        Setup parameters, options
         '''
         self.opts = opts
         self.client_name, self.client_version = opts['agent'].split('/')
@@ -239,11 +247,11 @@ class FreeDB(object):
 
     def _present_results(self, number=None, entry=None):
         '''
-        present retrieved disc info to the user
+        Present retrieved disc info to the user
         '''
         def present_result(number, entry):
             '''
-            print info from a single entry
+            Print info from a single entry
             '''
             print(self.header_text('\n===== Result {0:>02} =====\n'.format(number + 1)))
             for key in entry['disc_info']:
@@ -261,7 +269,7 @@ class FreeDB(object):
 
     def get_disc_info(self):
         '''
-        retrieve disc info
+        Retrieve disc info
         '''
         status, results = 0, None
         try:
@@ -278,17 +286,17 @@ class FreeDB(object):
         if not results:
             results = [{'category': None, 'disc_id': self.info['disc_id']}]
 
-        # a single result will not be enclosed in a list by the CDDB lib
+        # A single result will not be enclosed in a list by the CDDB lib
         self.results = [results] if isinstance(results, dict) else results
 
     def get_track_info(self):
         '''
-        retrieve track info for each disc info result
+        Retrieve track info for each disc info result
         '''
         for result in self.results:
             if not result['category']:
                 continue
-            sleep(1)  # throttle query rate
+            sleep(1)  # Throttle query rate
             status, track_info = CDDB.read(result['category'],
                                            result['disc_id'],
                                            server_url=self.opts['freedb_mirror'],
@@ -304,21 +312,21 @@ class FreeDB(object):
 
     def set_encodings(self):
         '''
-        set input character encoding for each info set
+        Set input character encoding for each info set
         '''
         def decode_info(coding):
             '''
-            decode disc and track info with `coding`
+            Decode disc and track info with ``coding``
             '''
             disc_info = encode_dict(entry['disc_info'], coding)
             track_info = encode_dict(entry['track_info'], coding)
             return {'disc_info': disc_info, 'track_info': track_info}
 
         if not len(self.info['record']):
-            return  # only the TOC is known; no disc and track titles available
+            return  # Only the TOC is known; no disc and track titles available
 
         yes = ['', 'y', 'yes'] ; no = ['n', 'no']
-        # this is a second order prompt loop
+        # This is a second order prompt loop
         for number, entry in enumerate(self.info['record']):
             suggested_encodings = suggest_encodings(entry)
             coding_prompt = 'Try an encoding (suggested: {0}): '.format(suggested_encodings)
@@ -336,7 +344,7 @@ class FreeDB(object):
 
     def get_preferred(self):
         '''
-        get preferred info set
+        Get preferred info set
         '''
         self._present_results()
 
@@ -357,16 +365,16 @@ class FreeDB(object):
         log.info('Selected result: {0}'.format(selected_entry['disc_info']['title']))
 
 
-class Discogs(object):
+class Discogs:
     '''
-    interaction with discogs
+    Interaction with discogs
     '''
     def __init__(self, opts):
         '''
-        setup options
+        Setup options
         '''
         if not HAS_DISCOGS:
-            log.error('discogs client library is unavailable')
+            log.error('Discogs client library is unavailable')
         else:
             self.opts = opts
             self.d = discogs_client.Client(self.opts['agent'],
@@ -374,28 +382,29 @@ class Discogs(object):
 
     def query(self, search):
         '''
-        query discogs database
+        Query discogs database
         '''
         if not HAS_DISCOGS:
-            log.error('discogs client library is unavailable')
+            log.error('Discogs client library is unavailable')
         else:
-            results = self.d.search('Stockholm By Night', type='release')
+            results = self.d.search('Mahler 9 Symphonie', type='release')
             artist = results[0].artists[0]
-            releases = d.search('Bit Shifter', type='artist')[0].releases[1].versions[0].labels[0].releases
+            releases = d.search('Herbert von Karajan', type='artist')[0].releases[1].versions[0].labels[0].releases
             for release in releases:
                 print(release)
 
 
-class CDParanoia(object):
+class CDParanoia:
     '''
-    interaction with cdparanoia
+    Interaction with cdparanoia
     '''
-    def __init__(self, opts, disc_info):
+    def __init__(self, opts, edited_info):
         '''
-        setup options and disc information
+        Setup options and disc information
         '''
         self.opts = opts
         self.disc_info = disc_info
+        self.disc_id = disc_id
 
         self.setup_dir()
         self.rip_tracks()
@@ -404,28 +413,27 @@ class CDParanoia(object):
 
     def setup_dir(self):
         '''
-        setup disc directory
+        Setup disc directory
         '''
         def find_disc_id_in_library(disc_id):
             '''
-            try to find a directory in the library having the disc_id
+            Try to find another path in the library having the same disc_id
             '''
             library = os.listdir(self.opts['library_dir'])
-            for disc_dir in library:
-                if disc_dir.endswith(disc_id):
-                    return disc_dir
+            for disc_path in library:
+                if disc_id in disc_path:
+                    return disc_path
 
-        disc_dir = ''
-        disc_id = hex(self.disc_info['disc_id'][0])
+        disc_path = ''
         self.preferred = None
 
         for number, entry in enumerate(self.disc_info['record']):
             if 'preferred' in entry:
                 self.preferred = number
                 disc_title = entry['disc_info']['title'].replace('/', '::')
-                disc_dir = '{0}.{1}'.format(disc_title, disc_id)
-        if not disc_dir:
-            disc_dir = disc_id
+                disc_path = '{0}.{1}'.format(disc_title, disc_id)
+        if not disc_path:
+            disc_path = disc_id
 
         other_dir = find_disc_id_in_library(disc_id)
         if other_dir:
@@ -434,26 +442,26 @@ class CDParanoia(object):
                 log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, full_other_dir))
             else:
                 log.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, full_other_dir))
-                sys.exit(exit_codes['disc_dir'])
+                sys.exit(exit_codes['disc_path'])
 
-        self.dest_dir = os.path.join(self.opts['library_dir'], disc_dir)
-        if os.path.exists(self.dest_dir):
+        self.full_disc_path = os.path.join(self.opts['library_dir'], disc_path)
+        if os.path.exists(self.full_disc_path):
             if self.opts['force']:
-                log.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.dest_dir))
-                for track in os.listdir(self.dest_dir):
-                    os.remove(os.path.join(self.dest_dir, track))
-                os.rmdir(self.dest_dir)
+                log.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.full_disc_path))
+                for track in os.listdir(self.full_disc_path):
+                    os.remove(os.path.join(self.full_disc_path, track))
+                os.rmdir(self.full_disc_path)
             else:
-                log.error('Destination directory, "{0}", exists'.format(self.dest_dir))
-                sys.exit(exit_codes['disc_dir'])
+                log.error('Destination directory, "{0}", exists'.format(self.full_disc_path))
+                sys.exit(exit_codes['disc_path'])
 
-        if not os.path.exists(self.dest_dir):
-            os.makedirs(self.dest_dir)
-        log.info('Writing disc to {0}'.format(self.dest_dir))
+        if not os.path.exists(self.full_disc_path):
+            os.makedirs(self.full_disc_path)
+        log.info('Writing disc to {0}'.format(self.full_disc_path))
 
     def rip_tracks(self):
         '''
-        rip all tracks from the disc
+        Rip all tracks from the disc
         '''
         cmd = ['cdparanoia', '--log-debug=/dev/null',
                              '--log-summary=/dev/null',
@@ -461,107 +469,119 @@ class CDParanoia(object):
                              '--batch',
                              '--force-read-speed={0}'.format(self.opts['read_speed']),
                              '--never-skip={0}'.format(self.opts['never_skip'])]
-        if call(cmd, cwd=self.dest_dir) != 0:
+        if call(cmd, cwd=self.full_disc_path) != 0:
             log.error('\nFailed to rip disc')
             sys.exit(exit_codes['rip_disc'])
 
     def rename_tracks(self):
         '''
-        rename ripped tracks
+        Rename ripped tracks
         '''
-        # not all discs have a TOC track
-        TOC_source = os.path.join(self.dest_dir, 'track00.cdda.wav')
+        # Not all discs have a TOC track
+        TOC_source = os.path.join(self.full_disc_path, 'track00.cdda.wav')
         if os.path.exists(TOC_source):
-            TOC_dest = os.path.join(self.dest_dir, '00 - disc TOC.wav')
+            TOC_dest = os.path.join(self.full_disc_path, '00 - disc TOC.wav')
             os.rename(TOC_source, TOC_dest)
 
+        # If no CDDA database records were found, there is no preferred record
         if self.preferred is not None:
             for track_number in range(self.disc_info['disc_id'][1]):
                 old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
                 track_name = self.disc_info['record'][self.preferred]['track_info']['TTITLE{0}'.format(track_number)]
                 new_name = '{0:02} - {1}.wav'.format(track_number + 1, track_name.replace('/', '::'))
-                # disc info may have more tracks than disc
-                if os.path.exists(os.path.join(self.dest_dir, old_name)):
-                    os.rename(os.path.join(self.dest_dir, old_name), os.path.join(self.dest_dir, new_name))
+                # Disc info may have more tracks than disc
+                if os.path.exists(os.path.join(self.full_disc_path, old_name)):
+                    os.rename(os.path.join(self.full_disc_path, old_name), os.path.join(self.full_disc_path, new_name))
 
     def save_disc_info(self):
         '''
-        save disc TOC and database record in disc directory
+        Save disc TOC and database record in disc directory
         '''
         if not len(self.disc_info['record']):
             log.warning('\nNo CDDA database records were found for {0}; '
-                     'you will need to name the disc directory, {1}, and tracks manually'
-                     ''.format(self.disc_info['disc_id'][0], self.dest_dir))
+                     ''.format(self.disc_info['disc_id'][0], self.full_disc_path))
 
-        with open(os.path.join(self.dest_dir, '00 - disc info.yaml'), 'wb') as disc_record:
+        with open(os.path.join(self.full_disc_path, '00 - disc info.yaml'), 'wb') as disc_record:
             disc_record.write(yaml.dump(self.disc_info))
 
 
-class FLAC(object):
+class FLAC:
     '''
-    flac interaction
+    Flac interaction
     '''
-    def __init__(self, opts, disc_dir=None):
+    def __init__(self, opts, full_disc_path):
         '''
-        setup opts
+        Setup opts
         '''
         self.opts = opts
-        if disc_dir:
-            self.rip_dir = disc_dir
-
+        self.full_disc_path = full_disc_path
         self.encode()
 
     def encode(self):
         '''
-        encode all `*.wav` files in the disc directory
+        Encode all `*.wav` files in the disc directory
         '''
-        def show(disc_dir):
+        def show(disc_path):
             '''
-            print the contents of disc_dir
+            Report the size of disc_path
             '''
-            call(['du', '-h', disc_dir])
+            call(['du', '-h', disc_path])
 
-        def encode_disc(cmd, disc_dir):
+        def encode_disc(cmd, disc_path):
             '''
-            encode all the tracks from a disc
+            Encode all the tracks from a disc
             '''
-            for track_name in sorted(os.listdir(disc_dir)):
+            for track_name in sorted(os.listdir(disc_path)):
                 if track_name.endswith('.wav'):
-                    call(cmd + [track_name], cwd=disc_dir)
+                    call(cmd + [track_name], cwd=disc_path)
 
         cmd = ['flac', '--silent']
-        if not self.opts['no_verify_encoding']:
+        if self.opts['verify_encoding']:
             cmd.append('--verify')
-        if not self.opts['keep_wav']:
+        if self.opts['delete_wav']:
             cmd.append('--delete-input-file')
 
-        if hasattr(self, 'rip_dir'):
-            log.info('Compressing tracks in disc dir {}'.format(self.rip_dir))
-            encode_disc(cmd, self.rip_dir)
-            show(self.rip_dir)
-        elif self.opts['encode_dir']:
-            log.info('Compressing tracks in disc dir {}'.format(self.opts['encode_dir']))
-            encode_disc(cmd, os.path.join(self.opts['library_dir'], self.opts['encode_dir']))
-            show(self.opts['encode_dir'])
-        else:
-            log.info('Compressing all tracks in library dir {}'.format(self.opts['library_dir']))
-            for disc_dir in sorted(os.listdir(self.opts['library_dir'])):
-                encode_disc(cmd, os.path.join(self.opts['library_dir'], disc_dir))
+        log.info('Compressing tracks in disc dir {}'.format(self.full_disc_path))
+        encode_disc(cmd, self.full_disc_path)
+        show(self.full_disc_path)
 
 
 def get_opts():
     '''
-    setup program options
+    Setup program options
     '''
-    script_dir = os.path.split(__file__)[0]
-    agent_file = os.path.join(script_dir, 'agent')
-    token_file = os.path.join(script_dir, 'token')
+    defaults = {
+        'quiet': False,
+        'color': True,
+        'verify_encoding': True,
+        'force': False,
+        'delete_wav': True,
+        'read_speed': 8,
+        'never_skip': 32,
+        'disc_device': '/dev/sr0',
+        'freedb_mirror': 'http://freedb.freedb.org/~cddb/cddb.cgi',
+        'library_dir': os.path.join(os.environ['HOME'], 'Music'),
+        'script_dir': os.path.split(__file__)[0],
+        'agent_file': os.path.join(os.path.split(__file__)[0], 'agent'),
+        'token_file': os.path.join(os.path.split(__file__)[0], 'token'),
+    }
 
-    library_dir = os.path.join(os.environ['HOME'], 'Music')
+    def block(b):
+        '''
+        Check whether the supplied path exists and exit if it is not a block
+        device
+        '''
+        if os.path.exists(b):
+            if stat.S_ISBLK(os.stat(b).st_mode):
+                return b
+            else:
+                raise ArgumentTypeError('{} is not a block device')
+        else:
+            raise ArgumentTypeError('{} does not exist')
 
     def directory(d):
         '''
-        check whether the supplied directory exists, create it if it doesn't,
+        Check whether the supplied path exists, create it if it doesn't,
         and exit if it is not a directory
         '''
         d = os.path.expanduser(os.path.expandvars(d))
@@ -569,105 +589,91 @@ def get_opts():
             if not os.path.islink(d):
                 os.makedirs(d)
                 return d
-            raise ArgumentTypeError('{d} exists and is not a directory'.format(d=d))
+            raise ArgumentTypeError('{} exists and is not a directory'.format(d))
         elif os.path.isdir(d):
             return d
-        raise ArgumentTypeError('cannot create directory {d}'.format(d=d))
+        else:
+            raise ArgumentTypeError('Cannot create directory {}'.format(d))
 
     def parse_args():
         '''
         process invocation arguments
         '''
-        desc = 'rip CDDA discs and flac encode and tag the tracks with info from a CDDA database'
+        desc = ('Rip an optical disc to compressed tracks or an image')
         parser = ArgumentParser(description=desc, formatter_class=ArgumentDefaultsHelpFormatter)
-        parser.add_argument('action',
-                            nargs='*',
-                            help='`rip`: rip CDDA tracks, `encode`: encode tracks in flac format; '
-                                 'if both arguments are given, the disc is ripped '
-                                 'and the tracks are encoded sequentially as a single operation, '
-                                 'otherwise if only `rip` is given, only ripping occurs, or '
-                                 'if only `encode` is specified, all unencoded tracks in the library dir are encoded')
         parser.add_argument('-q', '--quiet',
-                            action='store_true',
-                            help='quiet output')
-        parser.add_argument('-C', '--no-color',
-                            action='store_true',
-                            help='disable colorized output')
+                            type=bool,
+                            default=defaults['quiet'],
+                            help='Quiet output')
+        parser.add_argument('-c', '--color',
+                            type=bool,
+                            default=defaults['color'],
+                            help='Toggle colorized output')
         parser.add_argument('-d', '--device',
-                            type=str,
-                            default='/dev/sr0',
-                            help='CD drive device name')
+                            type=block,
+                            default=defaults['disc_device'],
+                            help='Disc drive device name')
         parser.add_argument('-a', '--agent-file',
                             type=FileType('rb'),
-                            default=agent_file,
-                            help='file containing HTTP client agent name and version conforming to RFC 1945 §3.7')
+                            default=defaults['agent_file'],
+                            help='File containing HTTP client agent name and version conforming to RFC 1945 §3.7')
         parser.add_argument('-t', '--token-file',
                             type=FileType('rb'),
-                            default=token_file,
-                            help='file containing discogs API token')
+                            default=defaults['token_file'],
+                            help='File containing discogs API token')
         parser.add_argument('-m', '--freedb-mirror',
                             type=str,
-                            default='http://freedb.freedb.org/~cddb/cddb.cgi',
-                            help='freedb mirror URL')
+                            default=defaults['freedb_mirror'],
+                            help='Freedb mirror URL')
         parser.add_argument('-l', '--library-dir',
                             type=directory,
-                            default=library_dir,
-                            help='base directory of music library')
+                            default=defaults['library_dir'],
+                            help='Base directory of music library')
         parser.add_argument('-s', '--read-speed',
                             type=int,
-                            default=8,
-                            help='disc drive read speed')
+                            default=defaults['read_speed'],
+                            help='Disc drive read speed')
         parser.add_argument('-S', '--never-skip',
                             type=int,
-                            default=32,
+                            default=defaults['never_skip'],
                             help='Reread skips until successful or this many times; if set to zero, reread indefinitely')
-        parser.add_argument('-f', '--force',
-                            action='store_true',
-                            help='overwrite existing disc directory if it exists or ignore existing disc director(y|ies) with same disc_id')
-        parser.add_argument('-n', '--no-verify-encoding',
-                            action='store_true',
-                            help='do not verify that flac encoded files match their source wav files')
-        parser.add_argument('-k', '--keep-wav',
-                            action='store_true',
-                            help='do not delete wave files after successful flac encoding')
-        parser.add_argument('-e', '--encode-dir',
-                            type=str,
-                            help='encode the tracks located in the specified disc dir relative to LIBRARY_DIR')
+        parser.add_argument('--force',
+                            type=bool,
+                            default=defaults['force'],
+                            help='Overwrite existing disc directory if it exists or ignore existing disc director(y|ies) with same disc_id')
+        parser.add_argument('--verify-encoding',
+                            type=bool,
+                            default=defaults['verify_encoding'],
+                            help='Do not verify that flac encoded files match their source wav files')
+        parser.add_argument('--delete-wav',
+                            type=bool,
+                            default=defaults['delete_wav'],
+                            help='Do not delete wave files after successful flac encoding')
 
         return vars(parser.parse_args())
 
     opts = parse_args()
-
     opts['agent'] = opts['agent_file'].read().strip() ; del opts['agent_file']
     opts['token'] = opts['token_file'].read().strip() ; del opts['token_file']
-    opts['action'] = set(opts['action'])
 
     return opts
 
 
 def main():
     '''
-    rip CDDA discs and flac encode and tag the tracks with info from a CDDA
-    database
+    Rip, encode, and name disc dir, track files
     '''
     opts = get_opts()
-
     log.setLevel('WARNING' if opts['quiet'] else 'INFO')
 
-    if 'rip' in opts['action']:
-        disc_drive = DiscDrive(opts)
-        disc_drive.close()
-
-        freedb = FreeDB(opts)
-        cdparanoia = CDParanoia(opts, freedb.info)
-
-    if {'rip', 'encode'} == opts['action']:
-        flac = FLAC(opts, cdparanoia.dest_dir)
-    elif 'encode' in opts['action']:
-        flac = FLAC(opts)
-
-    if 'rip' in opts['action']:
-        disc_drive.open()
+    disc_drive = DiscDrive(opts)
+    disc_drive.close()
+    freedb = FreeDB(opts)
+    edit = Edit(freedb.id, freedb.info)
+    cdparanoia = CDParanoia(opts, edit.info)
+    flac = FLAC(opts, cdparanoia.full_disc_path)
+    rename = Rename(opts)
+    disc_drive.open()
 
 
 if __name__ == '__main__':
