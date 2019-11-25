@@ -4,6 +4,7 @@
 import os
 import sys
 import six
+import glob
 import stat
 import yaml
 import shutil
@@ -38,7 +39,9 @@ log = logging.getLogger('jmoney')
 exit_codes = {'disc_drive': 11,
               'freedb_query': 21,
               'disc_path': 31,
-              'rip_disc': 41}
+              'rip_disc': 41,
+              'edit_disc': 51,
+              'rename_tracks': 61}
 
 
 def encode_dict(d, coding):
@@ -396,17 +399,79 @@ class Discogs:
                 print(release)
 
 
+class Edit:
+    '''
+    Edit disc directory name and track filenames
+    '''
+    def __init__(self, opts, disc_info):
+        '''
+        Setup opts
+        '''
+        self.opts = opts
+        self.disc_info = disc_info
+
+        self.edit()
+
+    def edit(self):
+        '''
+        Edit the disc/track info
+        '''
+        for number, entry in enumerate(self.disc_info['record']):
+            if 'preferred' in entry:
+                preferred = number
+                disc_title = entry['disc_info']['title'].replace('/', '::')
+                break
+        # If no CDDA database records were found, there is no preferred record
+        else:
+            disc_title = 'Insert disc title here'
+
+        edit_buffer = ('# Do not delete or reorder lines.\n'
+                       '# Lines beginning with # will be discarded.\n'
+                       '# Disc title:\n'
+                       + disc_title + '\n'
+                       '# Track titles:\n'
+                       '# Do not edit the "00 - " prefixes\n')
+
+        for track_index in range(self.disc_info['disc_id'][1]):
+            track_name = self.disc_info['record'][preferred]['track_info']['TTITLE{0}'.format(track_index)]
+            new_name = '{0:02} - {1}'.format(track_index + 1, track_name.replace('/', '::'))
+            edit_buffer += new_name + '\n'
+        if not range(self.disc_info['disc_id'][1]):
+            edit_buffer += '01 - Add track titles here\n02 - Make sure track titles align with what is actually on the disc\n'
+
+        # Edit
+        list_fd, list_path = tempfile.mkstemp('jmoney')
+        with open(list_path, 'w') as list_file:
+            list_file.write(edit_buffer)
+        call([self.opts['editor'], list_path])
+
+        # Append discID to disc name and file suffix to track names
+        with open(list_path) as list_file:
+            list_data = [title.strip() for title in list_file.readlines() if not title.strip().startswith('#')]
+        self.disc_id = hex(self.disc_info['disc_id'][0])
+        self.info = {
+            'disc_title': '{}.{}'.format(list_data[0], self.disc_id),
+            'track_titles': ['{}.wav'.format(title) for title in list_data[1:]],
+        }
+        if not self.info['disc_title']:
+            log.warning('The disc title is empty')
+        if len(self.info['track_titles']) != self.disc_info['disc_id'][1]:
+            log.error('The number of edited titles {} is different from the number of titles indicated by CDDA database {}'.format(self.info['track_titles'], self.disc_info['disc_id'][1]))
+            sys.exit(exit_codes['edit_disc'])
+
+
 class CDParanoia:
     '''
     Interaction with cdparanoia
     '''
-    def __init__(self, opts, edited_info):
+    def __init__(self, opts, disc_info, disc_id, edited_info):
         '''
         Setup options and disc information
         '''
         self.opts = opts
         self.disc_info = disc_info
         self.disc_id = disc_id
+        self.edited_info = edited_info
 
         self.setup_dir()
         self.rip_tracks()
@@ -426,30 +491,21 @@ class CDParanoia:
                 if disc_id in disc_path:
                     return disc_path
 
-        disc_path = ''
-        self.preferred = None
+        disc_path = '{0}.{1}'.format(self.edited_info['disc_title'], self.disc_id)
 
-        for number, entry in enumerate(self.disc_info['record']):
-            if 'preferred' in entry:
-                self.preferred = number
-                disc_title = entry['disc_info']['title'].replace('/', '::')
-                disc_path = '{0}.{1}'.format(disc_title, disc_id)
-        if not disc_path:
-            disc_path = disc_id
-
-        other_dir = find_disc_id_in_library(disc_id)
+        other_dir = find_disc_id_in_library(self.disc_id)
         if other_dir:
             full_other_dir = os.path.join(self.opts['audio_dir'], other_dir)
             if self.opts['force']:
-                log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, full_other_dir))
+                log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(self.disc_id, full_other_dir))
             else:
-                log.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, full_other_dir))
+                log.error('Disc (disc ID {0}) already in library at "{1}"'.format(self.disc_id, full_other_dir))
                 sys.exit(exit_codes['disc_path'])
 
         self.full_disc_path = os.path.join(self.opts['audio_dir'], disc_path)
         if os.path.exists(self.full_disc_path):
             if self.opts['force']:
-                log.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.full_disc_path))
+                log.warning('Force option enabled; overwriting destination directory, "{0}"'.format(self.full_disc_path))
                 for track in os.listdir(self.full_disc_path):
                     os.remove(os.path.join(self.full_disc_path, track))
                 os.rmdir(self.full_disc_path)
@@ -485,15 +541,16 @@ class CDParanoia:
             TOC_dest = os.path.join(self.full_disc_path, '00 - disc TOC.wav')
             os.rename(TOC_source, TOC_dest)
 
-        # If no CDDA database records were found, there is no preferred record
-        if self.preferred is not None:
-            for track_number in range(self.disc_info['disc_id'][1]):
-                old_name = 'track{0:02}.cdda.wav'.format(track_number + 1)
-                track_name = self.disc_info['record'][self.preferred]['track_info']['TTITLE{0}'.format(track_number)]
-                new_name = '{0:02} - {1}.wav'.format(track_number + 1, track_name.replace('/', '::'))
-                # Disc info may have more tracks than disc
-                if os.path.exists(os.path.join(self.full_disc_path, old_name)):
-                    os.rename(os.path.join(self.full_disc_path, old_name), os.path.join(self.full_disc_path, new_name))
+        # Ripped tracks may be different than tracks from CDDA database
+        wav_names = [wav_name for wav_name in glob.glob(os.path.join(self.full_disc_path, '?? - *.wav')) if not wav_name.startswith('00 - ')]
+        if len(wav_names) == len(self.edited_info['track_titles']):
+            log.error('Number of ripped tracks "{}" does not match number of track titles "{}"'.format(len(wav_names), len(self.edited_info['track_titles'])))
+            sys.exit(exit_codes['rename_tracks'])
+
+        for track_index, track_name in enumerate(self.edited_info['track_titles']):
+            old_name = 'track{0:02}.cdda.wav'.format(track_index + 1)
+            new_name = self.edited_info['track_titles'][track_index]
+            os.rename(os.path.join(self.full_disc_path, old_name), os.path.join(self.full_disc_path, new_name))
 
     def save_disc_info(self):
         '''
@@ -576,11 +633,12 @@ def get_opts():
         'verify_encoding': True,
         'force': False,
         'delete_wav': True,
-        'disc_load_sleep': 29,
+        'disc_load_sleep': 1,#29,
         'read_speed': 8,
         'never_skip': 32,
         'disc_device': '/dev/sr0',
         'freedb_mirror': 'http://freedb.freedb.org/~cddb/cddb.cgi',
+        'editor': 'vim',
         'audio_dir': os.path.join(os.environ['HOME'], 'Music'),
         'script_dir': os.path.split(__file__)[0],
         'agent_file': os.path.join(os.path.split(__file__)[0], 'agent'),
@@ -650,6 +708,10 @@ def get_opts():
                             type=str,
                             default=defaults['freedb_mirror'],
                             help='Freedb mirror URL')
+        parser.add_argument('-e', '--editor',
+                            type=str,
+                            default=defaults['editor'],
+                            help='Text editor used for updating disc/track names')
         parser.add_argument('-u', '--audio-dir',
                             type=directory,
                             default=defaults['audio_dir'],
@@ -702,10 +764,9 @@ def main():
 
     if opts['type'] == 'audio':
         freedb = FreeDB(opts)
-        edit = Edit(freedb.id, freedb.info)
-        cdparanoia = CDParanoia(opts, edit.info)
+        edit = Edit(opts, freedb.info)
+        cdparanoia = CDParanoia(opts, freedb.info, edit.disc_id, edit.info)
         flac = FLAC(opts, cdparanoia.full_disc_path)
-        rename = Rename(opts)
     elif opts['type'] == 'video':
         make_mkv = MakeMKV(opts)
         make_mkv.rip()
