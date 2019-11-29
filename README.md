@@ -1,4 +1,6 @@
-# JMoney CDDA ripper
+# JMoney optical disc ripper
+
+## CDDA
 
 JMoney uses cdparanoia to rip CDDA track files and retrieves disc and track
 info from freedb.  A directory is created for each disc.  The disc directory
@@ -13,16 +15,23 @@ JMoney can also encode ripped tracks into flac format.  This can be done as a
 second step in the ripping process, for a single disc directory or for the
 entire library.
 
+## DVD/BluRay
+
+In video mode, JMoney uses makemkvcon to rip DVD/BluRay discs.  You will need
+to provide makemkvcon with your own product key, if necessary.
+
 ## Examples
+
 ```console
-# insert a disc into the drive
-$ ./jmoney --help | less
-$ time ./jmoney --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8 rip
-$ time ./jmoney --no-verify-encoding encode
+# Install
+$ git clone https://github.com/jfindlay/jmoney.git ; cd jmoney
+$ ./jmoney --help
 ```
 ```console
-# rip and encode a single disc
-$ time ./jmoney rip encode
-# encode all wav files in the library
-$ time ./jmoney encode
+# Rip a CDDA
+$ time ./jmoney --type audio --device /dev/sr0 --library-dir ${HOME}/Music --read-speed 8
+```
+```console
+# Rip a DVD/BluRay
+$ time ./jmoney --type video --video-dir ${HOME}/Videos/Napoleon_Dynamite
 ```

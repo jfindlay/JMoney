@@ -212,6 +212,8 @@ class DiscDrive:
         if call(['eject', '-t']) != 0:
             log.error('\nFailed to close disc drive drawer')
             sys.exit(exit_codes['disc_drive'])
+        if self.opts['disc_load_sleep']:
+            sleep(self.opts['disc_load_sleep'])
 
     def open(self):
         '''
@@ -419,7 +421,7 @@ class CDParanoia:
             '''
             Try to find another path in the library having the same disc_id
             '''
-            library = os.listdir(self.opts['library_dir'])
+            library = os.listdir(self.opts['audio_dir'])
             for disc_path in library:
                 if disc_id in disc_path:
                     return disc_path
@@ -437,14 +439,14 @@ class CDParanoia:
 
         other_dir = find_disc_id_in_library(disc_id)
         if other_dir:
-            full_other_dir = os.path.join(self.opts['library_dir'], other_dir)
+            full_other_dir = os.path.join(self.opts['audio_dir'], other_dir)
             if self.opts['force']:
                 log.warning('Force option enabled; duplicate library entry "{0}" ignored'.format(disc_id, full_other_dir))
             else:
                 log.error('Disc (disc ID {0}) already in library at "{1}"'.format(disc_id, full_other_dir))
                 sys.exit(exit_codes['disc_path'])
 
-        self.full_disc_path = os.path.join(self.opts['library_dir'], disc_path)
+        self.full_disc_path = os.path.join(self.opts['audio_dir'], disc_path)
         if os.path.exists(self.full_disc_path):
             if self.opts['force']:
                 log.warning('Force option requested; overwriting destination directory, "{0}"'.format(self.full_disc_path))
@@ -546,21 +548,40 @@ class FLAC:
         show(self.full_disc_path)
 
 
+class MakeMKV:
+    '''
+    MakeMKV interaction
+    '''
+    def __init__(self, opts):
+        '''
+        Setup opts
+        '''
+        self.opts = opts
+
+    def rip(self):
+        '''
+        Execute MakeMKV command line
+        '''
+        call(['makemkvcon', '--minlength=0', '--robot', '--decrypt', 'mkv', 'disc:0', 'all', self.opts['video_dir']])
+
+
 def get_opts():
     '''
     Setup program options
     '''
     defaults = {
+        'type': 'audio',
         'quiet': False,
         'color': True,
         'verify_encoding': True,
         'force': False,
         'delete_wav': True,
+        'disc_load_sleep': 29,
         'read_speed': 8,
         'never_skip': 32,
         'disc_device': '/dev/sr0',
         'freedb_mirror': 'http://freedb.freedb.org/~cddb/cddb.cgi',
-        'library_dir': os.path.join(os.environ['HOME'], 'Music'),
+        'audio_dir': os.path.join(os.environ['HOME'], 'Music'),
         'script_dir': os.path.split(__file__)[0],
         'agent_file': os.path.join(os.path.split(__file__)[0], 'agent'),
         'token_file': os.path.join(os.path.split(__file__)[0], 'token'),
@@ -601,6 +622,10 @@ def get_opts():
         '''
         desc = ('Rip an optical disc to compressed tracks or an image')
         parser = ArgumentParser(description=desc, formatter_class=ArgumentDefaultsHelpFormatter)
+        parser.add_argument('--type',
+                            type=str,
+                            default=defaults['type'],
+                            help='Type of action to execute')
         parser.add_argument('-q', '--quiet',
                             type=bool,
                             default=defaults['quiet'],
@@ -625,10 +650,14 @@ def get_opts():
                             type=str,
                             default=defaults['freedb_mirror'],
                             help='Freedb mirror URL')
-        parser.add_argument('-l', '--library-dir',
+        parser.add_argument('-u', '--audio-dir',
                             type=directory,
-                            default=defaults['library_dir'],
+                            default=defaults['audio_dir'],
                             help='Base directory of music library')
+        parser.add_argument('--disc-load-sleep',
+                            type=int,
+                            default=defaults['disc_load_sleep'],
+                            help='Disc drive sleep before accessing disc')
         parser.add_argument('-s', '--read-speed',
                             type=int,
                             default=defaults['read_speed'],
@@ -649,6 +678,9 @@ def get_opts():
                             type=bool,
                             default=defaults['delete_wav'],
                             help='Do not delete wave files after successful flac encoding')
+        parser.add_argument('--video-dir',
+                            type=directory,
+                            help='Path to directory used by MakeMKV to store video tracks')
 
         return vars(parser.parse_args())
 
@@ -665,14 +697,19 @@ def main():
     '''
     opts = get_opts()
     log.setLevel('WARNING' if opts['quiet'] else 'INFO')
-
     disc_drive = DiscDrive(opts)
     disc_drive.close()
-    freedb = FreeDB(opts)
-    edit = Edit(freedb.id, freedb.info)
-    cdparanoia = CDParanoia(opts, edit.info)
-    flac = FLAC(opts, cdparanoia.full_disc_path)
-    rename = Rename(opts)
+
+    if opts['type'] == 'audio':
+        freedb = FreeDB(opts)
+        edit = Edit(freedb.id, freedb.info)
+        cdparanoia = CDParanoia(opts, edit.info)
+        flac = FLAC(opts, cdparanoia.full_disc_path)
+        rename = Rename(opts)
+    elif opts['type'] == 'video':
+        make_mkv = MakeMKV(opts)
+        make_mkv.rip()
+
     disc_drive.open()
 
 
