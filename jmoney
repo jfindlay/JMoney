@@ -424,6 +424,7 @@ class Edit:
         # If no CDDA database records were found, there is no preferred record
         else:
             disc_title = 'Insert disc title here'
+            preferred = None
 
         edit_buffer = ('# Do not delete or reorder lines.\n'
                        '# Lines beginning with # will be discarded.\n'
@@ -432,12 +433,13 @@ class Edit:
                        '# Track titles:\n'
                        '# Do not edit the "00 - " prefixes\n')
 
-        for track_index in range(self.disc_info['disc_id'][1]):
-            track_name = self.disc_info['record'][preferred]['track_info']['TTITLE{0}'.format(track_index)]
-            new_name = '{0:02} - {1}'.format(track_index + 1, track_name.replace('/', '::'))
-            edit_buffer += new_name + '\n'
-        if not range(self.disc_info['disc_id'][1]):
+        if preferred is None or not range(self.disc_info['disc_id'][1]):
             edit_buffer += '01 - Add track titles here\n02 - Make sure track titles align with what is actually on the disc\n'
+        else:
+            for track_index in range(self.disc_info['disc_id'][1]):
+                track_name = self.disc_info['record'][preferred]['track_info']['TTITLE{0}'.format(track_index)]
+                new_name = '{0:02} - {1}'.format(track_index + 1, track_name.replace('/', '::'))
+                edit_buffer += new_name + '\n'
 
         # Edit
         list_fd, list_path = tempfile.mkstemp('jmoney')
@@ -491,8 +493,6 @@ class CDParanoia:
                 if disc_id in disc_path:
                     return disc_path
 
-        disc_path = '{0}.{1}'.format(self.edited_info['disc_title'], self.disc_id)
-
         other_dir = find_disc_id_in_library(self.disc_id)
         if other_dir:
             full_other_dir = os.path.join(self.opts['audio_dir'], other_dir)
@@ -502,7 +502,7 @@ class CDParanoia:
                 log.error('Disc (disc ID {0}) already in library at "{1}"'.format(self.disc_id, full_other_dir))
                 sys.exit(exit_codes['disc_path'])
 
-        self.full_disc_path = os.path.join(self.opts['audio_dir'], disc_path)
+        self.full_disc_path = os.path.join(self.opts['audio_dir'], self.edited_info['disc_title'])
         if os.path.exists(self.full_disc_path):
             if self.opts['force']:
                 log.warning('Force option enabled; overwriting destination directory, "{0}"'.format(self.full_disc_path))
