@@ -633,7 +633,7 @@ def get_opts():
         'verify_encoding': True,
         'force': False,
         'delete_wav': True,
-        'disc_load_sleep': 1,#29,
+        'disc_load_sleep': 29,
         'read_speed': 8,
         'never_skip': 32,
         'disc_device': '/dev/sr0',
