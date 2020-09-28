@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -19,7 +19,11 @@ try:
     HAS_CHARDET = True
 except ImportError:
     HAS_CHARDET = False
-import DiscID, CDDB
+try:
+    import DiscID, CDDB
+    HAS_DISCID = Ture
+except ImportError:
+    HAS_DISCID = False
 try:
     import discogs_client
     HAS_DISCOGS = True
@@ -653,6 +657,9 @@ def get_opts():
         if os.path.exists(b):
             if stat.S_ISBLK(os.stat(b).st_mode):
                 return b
+            # HACK: Disc has been preripped (by `dvdbackup`, for example) to a directory
+            elif os.path.isdir(b):
+                return b
             else:
                 raise ArgumentTypeError('{} is not a block device')
         else:
@@ -674,13 +681,13 @@ def get_opts():
             if not os.path.islink(d):
                 os.makedirs(d)
                 return d
-            raise ArgumentTypeError('{} already exists as a link'.format(d))
+            raise ArgumentTypeError('"{}" already exists as a link'.format(d))
         elif os.path.isdir(d):
             if new_directory:
-                raise ArgumentTypeError('{} already exists'.format(d))
+                raise ArgumentTypeError('"{}" already exists'.format(d))
             return d
         else:
-            raise ArgumentTypeError('{} already exists as a file'.format(d))
+            raise ArgumentTypeError('"{}" already exists as a file'.format(d))
 
     def parse_args():
         '''
