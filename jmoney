@@ -216,7 +216,7 @@ class DiscDrive:
         '''
         Close disc drive drawer
         '''
-        if call(['eject', '-t']) != 0:
+        if call(['eject', '-t', self.opts['device']]) != 0:
             log.error('\nFailed to close disc drive drawer')
             sys.exit(exit_codes['disc_drive'])
         if self.opts['disc_load_sleep']:
@@ -226,7 +226,7 @@ class DiscDrive:
         '''
         Open disc drive drawer
         '''
-        if call(['eject']) != 0:
+        if call(['eject', self.opts['device']]) != 0:
             log.error('\nFailed to open disc drive')
             sys.exit(exit_codes['disc_drive'])
 
@@ -623,7 +623,12 @@ class MakeMKV:
         '''
         Execute MakeMKV command line
         '''
-        call(['makemkvcon', '--minlength=0', '--robot', '--decrypt', 'mkv', 'disc:0', 'all', self.opts['video_dir']])
+        # TODO: Find a better construct
+        if self.opts['device'] == '/dev/sr0':
+            device = 'disc:0'
+        elif self.opts['device'] == '/dev/sr1':
+            device = 'disc:1'
+        call(['makemkvcon', '--minlength=0', '--robot', '--decrypt', 'mkv', device, 'all', self.opts['video_dir']])
 
 
 def get_opts():
